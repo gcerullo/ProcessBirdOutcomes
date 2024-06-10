@@ -8,7 +8,7 @@ combines Dave, Simon, Daniel point counts
 Prepares abundance outputs to be ready to give as occupancy to Flockr
 
 #3. FitModel.R 
-Fit the model structure for Bird occupancy 
+Fit the model structure for Bird occupancy, allowing occ to alter with habitat and age 
 
 
 
