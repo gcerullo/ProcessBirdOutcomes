@@ -1,4 +1,5 @@
 #fit model 
+#this code sets the model structure for the full multi-species Bayesian occupancy models
 
 library(brms); library(flocker); library(dplyr)
 # devtools::install_github("jsocolar/flocker")
