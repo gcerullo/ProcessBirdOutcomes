@@ -1,7 +1,11 @@
 #GC 11/06/24
 #Assess the bird outcomes of different scenarios, where each scenario is disaggregated by age
-
 #Nb 11.06.24 - still need to add in yield-corrected scenarios and outputs of full bird model
+
+
+#This code:
+#1. Uses model outputs from Bayesian spp occ to summarise spp categories 
+#2. To propate through bird outcomes for each spp.
 
 library(tidyr)
 library(ggplot2)
@@ -57,14 +61,14 @@ total_landscape_pts <- bird_CF*1000
 #scenarios where all plantation conversion happens in year 0 
 #scenarios <- readRDS("R_code/BuildScenarios/BuildingHarvestingScenarios/allScenarios.rds") 
 
-
-hab_by_year <- read.csv("Tables/HabByYears.csv", strip.white = TRUE) %>%  
+hab_by_year <- read.csv("Inputs/HabByYears.csv", strip.white = TRUE) %>%  
   rename(true_year = year, 
          functionalhabAge = functional_habAge, 
          habitat = transition_habitat) %>% select(-X)
 hab_by_year$habitat %>% unique
 
 #INCORPORATE TEMPORAL INFORMATION INTO SCENARIOS####
+#EDIT NOTE - should push this upstream to to neaten code
 
 # ---------1. add time-delay to temporal information, so that we allow a 30 year harvest window  ------
 #hab_by year currently assumes all harvesting starts in year 0. 
@@ -116,8 +120,6 @@ hab_by_year <- hab_by_year %>% mutate(functionalhabAge = case_when(
   original_habitat == habitat ~ true_year,
   TRUE ~ functionalhabAge))
 
-
-
 #get just plantation data, so that we can calculate average plantation yields, assuming staggered harvests
 # plant_data <- hab_by_year %>% 
 #   filter(grepl("euc|alb", habitat, ignore.case = TRUE))
@@ -127,13 +129,10 @@ hab_by_year <- hab_by_year %>% mutate(functionalhabAge = case_when(
 #---------- ADD TEMPORAL INFORMATION TO SCENARIOS --------  ####
 
 #nb: only original habitat -> transition_habitat is possible
-scenarios[[16]] %>% select(scenarioName, original_habitat) %>% unique
-scenarios[[13]] %>% select(scenarioName, original_habitat) %>% unique
+scenarios[[12]] %>% select(scenarioName, original_habitat) %>% unique
+scenarios[[10]] %>% select(scenarioName, original_habitat) %>% unique
 scenarios[[11]] %>% select(scenarioName, original_habitat) %>% unique
-#so for instance, you CAN'T go from primary to once-logged 
-#AND THEN once-logged to restored; this is not possible in my scenarios
-#This means we can join age values by original and transition habitat
-#then assess ACD based on the functional habitat
+
 add_temporal_fun <- function(x){
   x %>% left_join(hab_by_year, by = c("original_habitat" = "original_habitat", 
                                       "habitat" = "habitat"), relationship = "many-to-many") 
@@ -142,7 +141,6 @@ add_temporal_fun <- function(x){
 scenarios <- lapply(scenarios, add_temporal_fun)
 
 # save temporal scenarios, 1csv per scenario --------------------------
-#TAKES 30 MINS TO RUN CAN SKIP #####
 
 
 # save each scenario as a csv in its own folder - we will process each scenario seperately 
@@ -155,7 +153,7 @@ for (i in seq_along(scenarios)) {
   csv_file_path <- file.path(csv_folder, csv_file_name)
   # -----UNCOMMENT!!!! ------
   # Save the current element as a CSV file
-  #  write.csv(scenarios[[i]], file = csv_file_path, row.names = FALSE)
+  #write.csv(scenarios[[i]], file = csv_file_path, row.names = FALSE)
   
   
   # Print a progress message
@@ -166,39 +164,8 @@ for (i in seq_along(scenarios)) {
 
 
 # ------ PROCESS BIRD OCCUPANCY DATA ACROSS POSTERIOR DRAWS  ------------
-#  build the habitat by age table from summarising 500 draws -------------
-#NB;The situations in which you want to propagate error (and so can't simply use the summarised estimates) are when you want to derive a quantity other than one that is spat out by the model directly. E.g. if you wanted to calculate average occupancy over 0-3 years of plantation age. In this situation you calculate the derived quantity per draw and then summarise across these. So in this example it would be: calculate the average occupancy over 0-3 years for each posterior draw, and then the distribution of this derived quantity (across your posterior draws) gives you your uncertainty-propagated derived quantity. You can summarise this down to a mean + CI by averaging across draws and taking X quantiles. Does that make sense?
-
-#read in summarised birds
-birds_summarised <- {readRDS("R_code/AssessBiodiversityOutcomes/Inputs/spRand_bird_occupancy_by_habAge_500_draws_summarised.rds") %>% 
-    mutate(habitat = case_when(
-      habitat == "Albizia_falcataria" ~ "albizia_current",
-      habitat == "Eucalyptus_pellita" ~ "eucalyptus_current",
-      habitat == "Twice_logged" ~ "twice-logged",
-      habitat == "Once_logged" ~ "once-logged",
-      habitat == "Restored" ~ "restored",
-      habitat == "Primary" ~ "primary",
-      TRUE ~ habitat)) %>%
-    
-    rename(occ = mid, 
-           occ_lwr = lwr, 
-           occ_upr = upr) %>% 
-    
-    select(species,habitat, dependency, time_since_logging, plantation_age, occ, occ_lwr, occ_upr) %>% 
-    
-    mutate(functionalhabAge = coalesce(time_since_logging, plantation_age)) %>% 
-    select(-c(time_since_logging, plantation_age)) %>% 
-    
-    
-    mutate(functionalhabAge = case_when(
-      habitat == "primary" ~ 0,
-      habitat == "twice-logged" ~ 0,
-      TRUE ~ functionalhabAge)) %>%  
-    mutate(functionalhabAge  = round(functionalhabAge,0)) }
-
-
 #shows birds separately for each posterior draw iteration;
-birds_raw <- readRDS("R_code/AssessBiodiversityOutcomes/Inputs/spRand_bird_occupancy_by_habAge_500_draws.rds") %>% 
+birds_raw <- readRDS("Inputs/occ500draws.rds") %>% 
   mutate(habitat = case_when(
     habitat == "Albizia_falcataria" ~ "albizia_current",
     habitat == "Eucalyptus_pellita" ~ "eucalyptus_current",
@@ -253,18 +220,17 @@ process_birds_data <- function(x) {
     bind_rows(P_2L) 
   
   
-  # Step 2: Add "improved" habitat
-  improved <- birds %>%
-    filter(habitat %in% c("eucalyptus_current", "albizia_current")) %>%
-    mutate(
-      habitat = case_when(
-        habitat == "eucalyptus_current" ~ "eucalyptus_improved",
-        habitat == "albizia_current" ~ "albizia_improved",
-        TRUE ~ habitat
-      )
-    )
-  
-  birds <- bind_rows(birds, improved)
+  # # Step 2: Add "improved" plantation varieties
+  # improved <- birds %>%
+  #   filter(habitat %in% c("eucalyptus_current", "albizia_current")) %>%
+  #   mutate(
+  #     habitat = case_when(
+  #       habitat == "eucalyptus_current" ~ "eucalyptus_improved",
+  #       habitat == "albizia_current" ~ "albizia_improved",
+  #       TRUE ~ habitat
+  #     )
+  #   )
+  #  birds <- bind_rows(birds, improved)
   
   # Step 3: Add missing years and assume 19 years of recovery for "once-logged" and "restored"
   
@@ -321,26 +287,23 @@ process_birds_data <- function(x) {
 
 # Call the function to process your 'birds' data frame
 processed_birds <- process_birds_data(birds_raw)
-
 processed_birds <- as.data.table(processed_birds)
 
 #---- save processed birds ----
+saveRDS(processed_birds, "Outputs/processedOccBirds.rds")
+
 #----can start HERE ----
-#saveRDS(processed_birds, "R_code/AssessBiodiversityOutcomes/Outputs/processed_birds.rds")
-processed_birds <- readRDS("R_code/AssessBiodiversityOutcomes/Outputs/processed_birds.rds")
+processed_birds <- readRDS("Outputs/processedOccBirds.rds")
 
 #remove improved improved yields
 processed_birds <- as.data.table(processed_birds)
 # Filter out rows where 'habitat' contains the string "improved" (case-insensitive)
 processed_birds <- processed_birds[!grepl("improved", habitat, ignore.case = TRUE)]
-# getwd()
 
-#----summarise across posterior draws (for visualisation only) ----
-# #calculate standard error
-# birds <- processed_birds[, .(occ = mean(occ), se_occ = sqrt(var(occ)/.N)), 
-#    by = .(species, habitat, functionalhabAge, dependency)] # group by these variable and calculate the mean and standard error 
 
-#calculate 90% confidence intervals 
+#----summarise across posterior draws (for calculating spp categories only) ----
+
+#calculate confidence intervals 
 birds <- processed_birds[, .(occ = mean(occ), 
                              occ_lwr = quantile(occ, 0.2), 
                              occ_upr = quantile(occ, 0.8)),
@@ -384,11 +347,13 @@ winners <- birds %>%
 
 #spp categories 
 sppCategories <- rbind(losers,intermediates1L,intermediates2L,winners) %>% ungroup
-saveRDS(sppCategories,"R_code/AssessBiodiversityOutcomes/Outputs/sppCategories.rds")
+saveRDS(sppCategories,"Outputs/sppCategories.rds")
 
 
 #-----plot data ------
 species_filt <- birds %>%  filter(dependency =="high") %>% select(species) %>% unique %>% slice(31:60)
+
+#NB there is considerable uncertainty in occupancy through time; make sure to get this across in manuscript
 #plot occupancy by species and habitat (with Confidence intervals)
 birds %>% 
   filter(habitat %in% c("primary", "once-logged", "twice-logged", "restored")) %>% 
@@ -409,27 +374,6 @@ birds %>%
   labs(y = "P(occupancy)", x = "Plantation age")+
   theme_bw()
 
-
-# scenario_filters <- c("all_primary_CY_D.csv")
-# spp_filter <- combined_df %>% select(species) %>% unique %>%  slice(1:100) %>% as.vector()
-# #, "mostly_1L_CY_D.csv", "mostly_2L_CY_D.csv")
-# 
-# birds %>% filter(habitat %in% c("primary", "once-logged", "twice-logged", "restored")) %>% 
-#   filter(species %in% species_filt$species) %>% 
-#   filter(production_target == 0.5) %>% 
-#   group_by(production_target, species) %>% slice(1) %>% ungroup() %>% 
-#   ggplot(aes(x = species, y = occ_60yr)) +
-#   geom_point(position = position_dodge(width = 0.7), size = 3) +
-#   geom_errorbar(aes(ymin = occ_60yr_lwr, ymax = occ_60yr_upr), width = 0.25, position = position_dodge(0.7)) +
-#   facet_wrap(~scenarioStart, scales = "free_x") +
-#   labs(x = "Species", y = "Occ_60yr") +
-#   theme_minimal()+
-#   # Flip x-axis labels 90 degrees
-#   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
-# 
-# birds %>% select(habitat) %>% unique
-
-
 # #=============  CALCULATE starting LANDSCAPE OCCUPANCY THRU TIME UNCERTAINTY ===========
 #calculate the error about the summing of landscape_occ thru to give occ_60yrs across bootstraps 
 
@@ -442,9 +386,11 @@ unique_SL <- all_start_landscape_scaled %>% select(scenarioStart) %>% unique() %
 unique_spp <- processed_birds %>% select(species) %>%  unique() %>% as.vector()
 combinations_SL <- as.data.table(expand.grid(scenarioStart = unique_SL$scenarioStart, species = unique_spp$species))
 
+
 function_SL_60yr_uncertainty <- function(single_scenario_i, processed_birds_i) {
   
   bird_join <- processed_birds_i[single_scenario_i, on = .(habitat), allow.cartesian = TRUE]
+  
   #calculate hab_occ
   result <- bird_join[, hab_occ := occ * num_points]
   
@@ -474,7 +420,7 @@ execute_SL_fun <-function(zeta) {
 #do this to calculate occ_60yr for each species, scenarioStart, and posterior draw iteration 
 result_list_SL <- lapply(1:nrow(combinations_SL), execute_SL_fun) 
 
-saveRDS(result_list_SL,"R_code/AssessBiodiversityOutcomes/Outputs/SL_occ60yr_perIteration.rds")
+saveRDS(result_list_SL,"Outputs/SLoccOutputs/SL_occ60yr_perIteration.rds")
 
 
 # ---- Calculate the SCENARIO OCCUPANCY THRU TIME UNCERTAINTY ------
