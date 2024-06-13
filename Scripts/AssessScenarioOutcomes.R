@@ -29,8 +29,7 @@ options(datatable.cautious = 100e6)
 
 #-----read in scenarios -------
 #either yield 
-#NEED TO CORRECT WITH PROPER YIELDS !!!!!! ####
-scenarios <- readRDS("Inputs/allScenariosStaggered.rds")
+scenarios <- readRDS("Inputs/MasterAllScenarios.rds")
 
 #------------SELECT CORRECT FOLDER TO SAVE OUTPUT (temporal scenarios) -------------- 
 
