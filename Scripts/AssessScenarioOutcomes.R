@@ -23,139 +23,31 @@ library(profvis)
 #read in the scenario parametres containing conversion factors for converting from point to parcel/entire landscape  
 source("Inputs/ScenarioParams.R")
 
-#------- MAKE KEY DECISIONS FOR SCRIPT HERE ---------------
 #this allows table joins to be 100 million rows (instead of 50,000,000 )
 options(datatable.cautious = 100e6)
 
-#-----read in scenarios -------
+#read in Inputs ####
+
+#-----read in scenarios without delays to get scenario composition -------
 scenarios <- readRDS("Inputs/MasterAllScenarios.rds")
-
-#------------SELECT CORRECT FOLDER TO SAVE OUTPUT (temporal scenarios) -------------- 
-
-#stores yield-matched scenarios, with temporal split
-scenario_folder <- "Outputs/scenariosForBirdsToBatch"
-
-#---------- define final output folder for storing processed bird outputs from scenarios -----------
-#define folder for saving, per scenario, final bird outputs (time-averaged-occupancy per scenario and species) 
-final_output_folder <- "Outputs/TimeAvOccFinalBirds"
-
-#---------- get scenario compositions -------------------------------
-#get scenario composition by reading in scenarios as an rds
-#(not processed with code above to be temporal, #but allows us to get scenario composition efficiently 
-
 scenario_composition <- rbindlist(scenarios, use.names=TRUE) # get scenario composition
+rm(scenarios)
 
-#define total points of a landscape 
-total_landscape_pts <- bird_CF*1000
-
-#------- END KEY DECISIONS FOR SCRIPT HERE ---------------
-
-#make scenarios temporally organized
-#read in Scenarios 
-#scenarios where all plantation conversion happens in year 0 
-#scenarios <- readRDS("R_code/BuildScenarios/BuildingHarvestingScenarios/allScenarios.rds") 
-
-hab_by_year <- read.csv("Inputs/HabByYears.csv", strip.white = TRUE) %>%  
-  rename(true_year = year, 
-         functionalhabAge = functional_habAge, 
-         habitat = transition_habitat) %>% select(-X)
-hab_by_year$habitat %>% unique
-
-#INCORPORATE TEMPORAL INFORMATION INTO SCENARIOS####
-#EDIT NOTE - should push this upstream to to neaten code
-
-# ---------1. add time-delay to temporal information, so that we allow a 30 year harvest window  ------
-#hab_by year currently assumes all harvesting starts in year 0. 
-#what if delay harvests/first plantation plants? 
-
-hab_by_year0 <- hab_by_year %>% cbind(harvest_delay = "delay 0")
-#for a time window of 30 years apply harvesting annually
-delay <- seq(1:29)
-
-output_list <- list()
+#read in scenarios WITH delays, where every scenarioType is a single csv
+#NB this is the same as MasterAllScenarios_withDelays.rds, except that all list elements are csvs
 
 
-for (i in delay) {
-  #make a datafrmae of 0s to add to beginning, to cause delay and leave habitat as original cover for the time of delay
-  yearZ <- hab_by_year %>%
-    filter(true_year == 0) %>%
-    uncount(i) %>%
-    group_by(original_habitat,habitat) %>%
-    mutate(true_year = seq_along(true_year)-1 ) %>%
-    ungroup() %>% 
-    #give age of original habitat during harvest delay, except for primary and deforested
-    mutate(functionalhabAge = case_when(
-      functional_habitat != "primary" & functional_habitat != "deforested" ~ true_year,
-      TRUE ~ functionalhabAge)) 
-  
-  #push true years by the length of the delay (e.g. add in 0s) and remove true year >60 
-  delayed_df <-hab_by_year %>%   
-    mutate(true_year = true_year + i ) %>% 
-    filter(true_year <61)
-  
-  #combine then remove beyond 60th years 
-  output <- yearZ %>%  rbind(delayed_df) %>% cbind(harvest_delay = paste("delay",i))
-  
-  output_list[[as.character(i)]] <- output
-}
+#get the csv file name for each scenario 
+csv_folder <- "Inputs/ScenariosWithDelaysCSVs"
+csv_files <- list.files(csv_folder, pattern = "*.csv", full.names = TRUE)
 
-
-#make sure we have all the years with same amount of rows
-x <-  rbindlist(output_list)
-test <- x %>% group_by(true_year) %>% count()
-plot(test) # ;looks good 
-
-#this hab_by_year now includes the temporal dimension assuming different delays until first harvest
-hab_by_year<- rbindlist(output_list) %>% rbind(hab_by_year0)
-
-#adjust to make sure that if original habitat = transition habitat for scenario duration
-#then functionalhabAge age doesn't reset after the delay
-hab_by_year <- hab_by_year %>% mutate(functionalhabAge = case_when(
-  original_habitat == habitat ~ true_year,
-  TRUE ~ functionalhabAge))
-
-
-
-#---------- ADD TEMPORAL INFORMATION TO SCENARIOS --------  ####
-
-#nb: only original habitat -> transition_habitat is possible
-scenarios[[12]] %>% select(scenarioName, original_habitat) %>% unique
-scenarios[[10]] %>% select(scenarioName, original_habitat) %>% unique
-scenarios[[11]] %>% select(scenarioName, original_habitat) %>% unique
-
-add_temporal_fun <- function(x){
-  x %>% left_join(hab_by_year, by = c("original_habitat" = "original_habitat", 
-                                      "habitat" = "habitat"), relationship = "many-to-many") 
-}
-
-scenarios <- lapply(scenarios, add_temporal_fun)
-
-# save temporal scenarios, 1csv per scenario --------------------------
-# save each scenario as a csv in its own folder - we will process each scenario seperately 
-
-
-###############
-############
-#######
-
-# Assuming your list of tibbles is called `scenarios`
-# Iterate over each tibble and save as CSV
-walk(scenarios, function(tibble) {
-  # Extract the scenario name
-  scenario_name <- tibble$scenarioName[1]
-  
-  # Construct the file path
-  file_path <- file.path(scenario_folder, paste0(scenario_name, ".csv"))
-  
-  # Save the tibble to CSV
-  write_csv(tibble, file_path)
-})
-
+#----read in properly thinned occ500draws for each bird 
+birds <- readRDS("Inputs/occ500draws.rds")
 
 
 # ------ PROCESS BIRD OCCUPANCY DATA ACROSS POSTERIOR DRAWS  ------------
 #shows birds separately for each posterior draw iteration;
-birds_raw <- readRDS("Inputs/occ500draws.rds") %>% 
+birds_raw <- birds %>% 
   mutate(habitat = case_when(
     habitat == "Albizia_falcataria" ~ "albizia_current",
     habitat == "Eucalyptus_pellita" ~ "eucalyptus_current",
@@ -341,7 +233,10 @@ saveRDS(sppCategories,"Outputs/sppCategories.rds")
 
 
 #-----plot data ------
-species_filt <- birds %>%  filter(dependency =="high") %>% select(species) %>% unique %>% slice(31:60)
+species_filt <- birds %>%  
+  filter(dependency =="high") %>% 
+  select(species) %>%
+  unique %>% slice(31:60)
 
 #NB there is considerable uncertainty in occupancy through time; make sure to get this across in manuscript
 #plot occupancy by species and habitat (with Confidence intervals)
@@ -456,15 +351,11 @@ function_scenario_60yr_uncertainty <- function(single_scenario_i, processed_bird
 
 
 #-----read in scenario group and define harvest delay ------
-#get the csv file name for each scenario 
-csv_files <- list.files(csv_folder, pattern = "*.csv", full.names = TRUE)
-
 
 #DEFINE DELAY FILTER ####
-#(we have to subset only a few delay schedules to improve computational efficiency)
+#(we  subset only a few delay schedules to improve computational efficiency)
 #delay filter (availalbe 0-29 in 1 year increments basically allow each scenario to be delayed in its first conversion by the delay filter)
 delayFilters <- c("delay 0", "delay 29")
-#delayFilters <- c("delay 0")
 harvest_window <-  length(delayFilters)##how many harvest delays?
 
 #set a folder for saving outputs, showing for each species and scenario and iteration, occ_60 for lanscape
@@ -485,7 +376,7 @@ for (k in seq_along(csv_files)){
   rds_file_path <- file.path(rds_folder, rds_file_name)   
   
   #=====
-  # # Choose a smaller number of indices and species for testing
+  # # Choose a smaller number of scenairos indices and species for testing
   #.............................................................
   # # For example, let's use the first 5 indices and first 3 species
   # selected_indices <- scenario_group %>% select(index) %>% unique %>%  slice(1:30) %>%  pull()
@@ -562,24 +453,24 @@ for (k in seq_along(csv_files)){
 }
 
 
-#-----------------calculate geometric for each  iteration and species category ----
+#-----------------calculate rel occ for each  iteration and species category ----
 cap <- 1.5 # don't allow scenario occ to be more than 1.5 starting landscape occ [only used if calculating geometric mean]
 sppCategories <- readRDS("R_code/AssessBiodiversityOutcomes/Outputs/sppCategories.rds")
 sppCategories<- as.data.table(sppCategories)
-IUCN_classification <- read.csv("R_code/AssessBiodiversityOutcomes/Inputs/AllBorneoSpeciesTraits.csv") %>% 
+IUCN_classification <- read.csv("Inputs/AllBorneoSpeciesTraits.csv") %>% 
   select(spp, redlistCategory) %>% unique()%>% rename(species = spp) %>% as.data.table() %>%  
   mutate(threatened = case_when(
     redlistCategory != "Least Concern" & redlistCategory != "" ~ "Y",
     TRUE ~ "N"
   ))
 
-rds_folder <- "R_code/AssessBiodiversityOutcomes/Outputs/occ60PerScenarioIteration"
+rds_folder <- "Outputs/occ60PerScenarioIteration"
 occ60_files <- list.files(rds_folder, pattern = "*.rds", full.names = TRUE)
 
 #occ60_files <- occ60_files[2:3]
 
 #SL_60yrOcc 
-SL_occ60 <- readRDS("R_code/AssessBiodiversityOutcomes/Outputs/SL_occ60yr_perIteration.rds") 
+SL_occ60 <- readRDS("Outputs/SL_occ60yr_perIteration.rds") 
 SL_occ60_dt <- rbindlist(SL_occ60) %>%
   rename(SL_occ_60yr = occ_60yr)
 
@@ -587,9 +478,9 @@ SL_occ60_dt <- rbindlist(SL_occ60) %>%
 SL_all_primary_dt<- SL_occ60_dt %>% filter(scenarioStart == "all_primary") 
 
 # Allocate folder for geomresults
-geom_result_folder <- "R_code/AssessBiodiversityOutcomes/Outputs/GeometricMeansPerIteration"
+#geom_result_folder <- "R_code/AssessBiodiversityOutcomes/Outputs/GeometricMeansPerIteration"
 #allocate folder to hold raw relative occupancy values, for further apraisal 
-raw_rel_occ_folder <- "R_code/AssessBiodiversityOutcomes/Outputs/Rel_Occ_PerIteration"
+raw_rel_occ_folder <- "Outputs/Rel_Occ_PerIteration"
 
 for (w in seq_along(occ60_files)){
   occ60 <- readRDS(occ60_files[[w]])
@@ -601,7 +492,7 @@ for (w in seq_along(occ60_files)){
   
   
   # Combine folder path and file name to create full file path
-  geom_file_path <- file.path(geom_result_folder, rds_file_name)   
+  occ_file_path <- file.path(raw_rel_occ_folder, rds_file_name)   
   #relOcc_file_path <- file.path(raw_rel_occ_folder, relOcc_file_name) 
   
   #add starting landscape to scenarios 
@@ -639,65 +530,24 @@ for (w in seq_along(occ60_files)){
   #summarise species-level median rel occ across 500 iterations 
   
   # Summarize species-level median rel occ across iterations
-  geom_means <- occ_comb[, .(SppMedRelOcc = median(rel_occ, na.rm = TRUE)), 
+  rel_occ <- occ_comb[, .(SppMedRelOcc = median(rel_occ, na.rm = TRUE)), 
                          by = .(species, index, production_target)]
   
   #save the output to an rds folder 
-  saveRDS(geom_means, file = geom_file_path)
+  saveRDS(rel_occ, file = occ_file_path)
 }
 
 #--------  read in geom means ----------------------
-geom_result_folder <- "R_code/AssessBiodiversityOutcomes/Outputs/GeometricMeansPerIteration"
-geomMean_files <- list.files(geom_result_folder, pattern = "*.rds", full.names = TRUE)
-#read in data that has been baselined the fully old-growth starting landscape  
-geomMean_files <- list.files(geom_result_folder, pattern = "^OGbaseline.*\\.rds$", full.names = TRUE)
+relOcc_result_folder <- "Outputs/Rel_Occ_PerIteration"
+relOcc_files <- list.files(relOcc_result_folder, pattern = "^OGbaseline.*\\.rds$", full.names = TRUE)
 
-geomMeans <- lapply(geomMean_files, readRDS)
+relOcc <- lapply(geomMean_files, relOcc_files)
 
-rel_occ <-rbindlist(geomMeans)
-helmeted_hornbill <- rel_occ  %>% filter(species == "Helmeted Hornbill")
-greatArgus <-  rel_occ  %>% filter(species == "Great Argus")
+rel_occ_df <-rbindlist(relOcc_files)
+helmeted_hornbill <- rel_occ_df  %>% filter(species == "Helmeted Hornbill")
+greatArgus <-  rel_occ_df  %>% filter(species == "Great Argus")
 #----- summarise geom means and across posterior draws  -----
 
-#check; are values normally distributed across posterior draws - if not then take median of median rel occ
-# #or median of geometric means 
-# subGeom <- geomMeans[[1]] %>% filter(spp_category == "loser") %>% select(index) %>% 
-#   unique() %>% slice(1:80) %>% pull()
-# checkDist <- geomMeans[[1]] %>% filter(index %in% subGeom)
-# 
-# #looks like a fairly normal distribution; can take means across bootstraps
-# checkDist %>% ggplot(aes(x = SppMedRelOcc)) +
-#   geom_histogram(binwidth = 0.01, color = "black", fill = "blue", alpha = 0.6) +
-#   facet_wrap(~index, scales = "free") +
-#   labs(
-#     title = "Histogram of medianRelOcc by Index",
-#     x = "medianRelOcc",
-#     y = "Frequency"
-#   )+
-#   xlim(0, 1)
-# 
-# checkDist %>% filter(index == "all_primary_CY_D.csv 6") %>% 
-#   ggplot(aes(x = SppMedRelOcc)) +
-#   geom_histogram(binwidth = 0.01, color = "black", fill = "blue", alpha = 0.6) +
-#   facet_wrap(~index, scales = "free") +
-#   labs(
-#     title = "Histogram of medianRelOcc by Index",
-#     x = "medianRelOcc",
-#     y = "Frequency"
-#   )+
-#   xlim(0, 1)
-
-
-
-# summarise_across_posterior_fun <- function(x){
-#   x %>% group_by(spp_category, index, production_target) %>%  
-#     summarise(geom_mean =median(geometric_mean), 
-#               medianRelativeOccupancy = median(medRelOcc),
-#               p5_medianRelativeOccupancy = quantile(medianRelativeOccupancy, 0.05),
-#               p95_medianRelativeOccupancy = quantile(medianRelativeOccupancy, 0.95), 
-#               IQR)
-#               
-# }
 
 #summarised across data that has already been medianed per spp from 500 draws
 
@@ -713,11 +563,11 @@ summarise_across_posterior_fun <- function(x){
   
 }
 #---output of summarised statistics across posterior draws ----
-final_geoms <- lapply(geomMeans, summarise_across_posterior_fun)
-final_geoms <- rbindlist(final_geoms)
+final_relOcc <- lapply(relOcc, summarise_across_posterior_fun)
+final_relOcc <- rbindlist(final_relOcc)
 
 #add back in key information 
-final_geoms <- final_geoms %>%  left_join(scenario_composition, by = c("index", "production_target"))# %>% 
+final_relOcc <- final_relOcc %>%  left_join(scenario_composition, by = c("index", "production_target"))# %>% 
 
 
 #for IUCN near threatened species 
@@ -731,7 +581,7 @@ summarise_IUCN_across_posterior_fun <- function(x){
   
 }
 
-final_IUCN <- lapply(geomMeans, summarise_IUCN_across_posterior_fun)
+final_IUCN <- lapply(final_relOcc, summarise_IUCN_across_posterior_fun)
 final_IUCN <- rbindlist(final_IUCN)
 
 #add back in key information 
@@ -743,7 +593,7 @@ final_IUCN <- final_IUCN %>%  left_join(scenario_composition, by = c("index", "p
 getwd()
 names(final_geoms)
 #output of grouping by winner, loser, int
-output <- final_geoms %>% select(index, production_target, scenarioName,scenarioStart,
+output <- final_relOcc %>% select(index, production_target, scenarioName,scenarioStart,
                                  medianRelativeOccupancy,p5_medianRelativeOccupancy, p95_medianRelativeOccupancy,
                                  spp_category) %>% cbind(outcome = "birds")
 
@@ -757,5 +607,5 @@ outputIUCN <- final_IUCN %>% select(index, production_target, scenarioName,scena
 # saveRDS(outputIUCN, "R_code/AllOutcomesFigure/Data/birdsIUCN.rds")
 
 #outputs when using fully primary baseline
-saveRDS(output, "R_code/AllOutcomesFigure/Data/OG_baseline_birds.rds")
-saveRDS(outputIUCN, "R_code/AllOutcomesFigure/Data/OG_baseline_birdsIUCN.rds")
+saveRDS(output, "FinalPerformanceOutput/OG_baseline_birds.rds")
+saveRDS(outputIUCN, "FinalPerformanceOutput/OG_baseline_birdsIUCN.rds")
