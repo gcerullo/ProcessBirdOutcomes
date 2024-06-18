@@ -7,7 +7,7 @@
 #1. Uses model outputs from Bayesian spp occ to summarise spp categories 
 #2. To propate through bird outcomes for each spp.
 
-library(tidyr)
+library(tidyverse)
 library(ggplot2)
 library(data.table)
 library(dplyr)
@@ -28,13 +28,12 @@ source("Inputs/ScenarioParams.R")
 options(datatable.cautious = 100e6)
 
 #-----read in scenarios -------
-#either yield 
 scenarios <- readRDS("Inputs/MasterAllScenarios.rds")
 
 #------------SELECT CORRECT FOLDER TO SAVE OUTPUT (temporal scenarios) -------------- 
 
 #stores yield-matched scenarios, with temporal split
-csv_folder <- "Outputs/scenariosForBirdsToBatch"
+scenario_folder <- "Outputs/scenariosForBirdsToBatch"
 
 #---------- define final output folder for storing processed bird outputs from scenarios -----------
 #define folder for saving, per scenario, final bird outputs (time-averaged-occupancy per scenario and species) 
@@ -115,10 +114,6 @@ hab_by_year <- hab_by_year %>% mutate(functionalhabAge = case_when(
   original_habitat == habitat ~ true_year,
   TRUE ~ functionalhabAge))
 
-#get just plantation data, so that we can calculate average plantation yields, assuming staggered harvests
-# plant_data <- hab_by_year %>% 
-#   filter(grepl("euc|alb", habitat, ignore.case = TRUE))
-# write.csv(plant_data, "Tables/PlantationYearsForCalculatingPlantationYields.csv")
 
 
 #---------- ADD TEMPORAL INFORMATION TO SCENARIOS --------  ####
@@ -136,24 +131,27 @@ add_temporal_fun <- function(x){
 scenarios <- lapply(scenarios, add_temporal_fun)
 
 # save temporal scenarios, 1csv per scenario --------------------------
-
-
 # save each scenario as a csv in its own folder - we will process each scenario seperately 
-#to save on memory
-for (i in seq_along(scenarios)) {
-  # Generate a unique CSV file name
-  csv_file_name <- paste("scenario", i, ".csv", sep = "")
+
+
+###############
+############
+#######
+
+# Assuming your list of tibbles is called `scenarios`
+# Iterate over each tibble and save as CSV
+walk(scenarios, function(tibble) {
+  # Extract the scenario name
+  scenario_name <- tibble$scenarioName[1]
   
-  # Combine folder path and file name to create full file path
-  csv_file_path <- file.path(csv_folder, csv_file_name)
-  # -----UNCOMMENT!!!! ------
-  # Save the current element as a CSV file
-  write.csv(scenarios[[i]], file = csv_file_path, row.names = FALSE)
+  # Construct the file path
+  file_path <- file.path(scenario_folder, paste0(scenario_name, ".csv"))
   
-  
-  # Print a progress message
-  cat("CSV file", csv_file_name, "for scenario", "saved. Progress:", i, "out of", length(scenarios), "\n")
-}
+  # Save the tibble to CSV
+  write_csv(tibble, file_path)
+})
+
+
 
 # ------ PROCESS BIRD OCCUPANCY DATA ACROSS POSTERIOR DRAWS  ------------
 #shows birds separately for each posterior draw iteration;
@@ -282,7 +280,7 @@ processed_birds <- process_birds_data(birds_raw)
 processed_birds <- as.data.table(processed_birds)
 
 #---- save processed birds ----
-#saveRDS(processed_birds, "Outputs/processedOccBirds.rds")
+saveRDS(processed_birds, "Outputs/processedOccBirds.rds")
 
 #----can start HERE ----
 processed_birds <- readRDS("Outputs/processedOccBirds.rds")
