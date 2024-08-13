@@ -13,11 +13,12 @@ This code combines the following data into one dataframe:
 
 
 #2. ForBirdForFlockr.R 
-This code takes the output from 1 and organises the data so that it is ready to pass to the Flockr package, for running Bayesian multi-occupancy analyses
+This code takes the output from 1 and organises the data so that it is ready to pass to the Flockr package, for running Bayesian multi-spp occupancy analyses
 
 
 #3. FitModel.R 
-This code takes the outout from 2 and fits the model structure. allowing bird occupancy o alter with habitat and age.
+This code takes the outout from 2 and fits the model structure, allowing species-;eve; bird occupancy o alter with habitat and age, while pooling variance between forest-dependency categories.
 
-#AssessScenarioOutcomes.R
-This code assesses bird outcomes for each scenario. 
+#4. AssessScenarioOutcomes.R
+This code assesses bird outcomes for each scenario, using model predictions of how birds 
+respond to habitat through time. 
