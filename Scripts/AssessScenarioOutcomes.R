@@ -42,7 +42,15 @@ csv_folder <- "Inputs/ScenariosWithDelaysCSVs"
 csv_files <- list.files(csv_folder, pattern = "*.csv", full.names = TRUE)
 
 #----read in properly thinned occ500draws for each bird 
-birds <- readRDS("Inputs/occ500draws.rds")
+birds <- readRDS("Inputs/occ500drawsSept24.rds")
+
+#----read in Bird IUCN information 
+IUCN_classification <- read.csv("Inputs/AllBorneoSpeciesTraits.csv") %>% 
+  select(spp, redlistCategory) %>% unique()%>% rename(species = spp) %>% as.data.table() %>%  
+  mutate(threatened = case_when(
+    redlistCategory != "Least Concern" & redlistCategory != "" ~ "Y",
+    TRUE ~ "N"
+  ))
 
 
 # ------ PROCESS BIRD OCCUPANCY DATA ACROSS POSTERIOR DRAWS  ------------
@@ -172,10 +180,10 @@ processed_birds <- process_birds_data(birds_raw)
 processed_birds <- as.data.table(processed_birds)
 
 #---- save processed birds ----
-saveRDS(processed_birds, "Outputs/processedOccBirds.rds")
+saveRDS(processed_birds, "Outputs/processedOccBirdsSept24.rds")
 
 #----can start HERE ----
-processed_birds <- readRDS("Outputs/processedOccBirds.rds")
+processed_birds <- readRDS("Outputs/processedOccBirdsSept24.rds")
 
 #remove improved improved yields
 processed_birds <- as.data.table(processed_birds)
@@ -229,7 +237,7 @@ winners <- birds %>%
 
 #spp categories 
 sppCategories <- rbind(losers,intermediates1L,intermediates2L,winners) %>% ungroup
-saveRDS(sppCategories,"Outputs/sppCategories.rds")
+saveRDS(sppCategories,"Outputs/sppCategoriesSept24.rds")
 
 
 #-----plot data ------
@@ -305,7 +313,7 @@ execute_SL_fun <-function(zeta) {
 #do this to calculate occ_60yr for each species, scenarioStart, and posterior draw iteration 
 result_list_SL <- lapply(1:nrow(combinations_SL), execute_SL_fun) 
 
-saveRDS(result_list_SL,"Outputs/SLoccOutputs/SL_occ60yr_perIteration.rds")
+saveRDS(result_list_SL,"Outputs/SLoccOutputs/SL_occ60yr_perIterationSept24.rds")
 
 # ---- Calculate the SCENARIO OCCUPANCY THRU TIME UNCERTAINTY ------
 
@@ -359,7 +367,7 @@ delayFilters <- c("delay 0", "delay 29")
 harvest_window <-  length(delayFilters)##how many harvest delays?
 
 #set a folder for saving outputs, showing for each species and scenario and iteration, occ_60 for lanscape
-rds_folder <- "Outputs/occ60PerScenarioIteration"
+rds_folder <- "Outputs/occ60PerScenarioIterationSept24"
 
 for (k in seq_along(csv_files)){
   
@@ -455,22 +463,16 @@ for (k in seq_along(csv_files)){
 
 #-----------------calculate rel occ for each  iteration and species category ----
 cap <- 1.5 # don't allow scenario occ to be more than 1.5 starting landscape occ [only used if calculating geometric mean]
-sppCategories <- readRDS("R_code/AssessBiodiversityOutcomes/Outputs/sppCategories.rds")
+sppCategories <- readRDS("R_code/AssessBiodiversityOutcomes/Outputs/sppCategoriesSept24.rds")
 sppCategories<- as.data.table(sppCategories)
-IUCN_classification <- read.csv("Inputs/AllBorneoSpeciesTraits.csv") %>% 
-  select(spp, redlistCategory) %>% unique()%>% rename(species = spp) %>% as.data.table() %>%  
-  mutate(threatened = case_when(
-    redlistCategory != "Least Concern" & redlistCategory != "" ~ "Y",
-    TRUE ~ "N"
-  ))
 
-rds_folder <- "Outputs/occ60PerScenarioIteration"
+rds_folder <- "Outputs/occ60PerScenarioIterationSept24"
 occ60_files <- list.files(rds_folder, pattern = "*.rds", full.names = TRUE)
 
 #occ60_files <- occ60_files[2:3]
 
 #SL_60yrOcc 
-SL_occ60 <- readRDS("Outputs/SL_occ60yr_perIteration.rds") 
+SL_occ60 <- readRDS("Outputs/SL_occ60yr_perIterationSept24.rds") 
 SL_occ60_dt <- rbindlist(SL_occ60) %>%
   rename(SL_occ_60yr = occ_60yr)
 
@@ -480,7 +482,7 @@ SL_all_primary_dt<- SL_occ60_dt %>% filter(scenarioStart == "all_primary")
 # Allocate folder for geomresults
 #geom_result_folder <- "R_code/AssessBiodiversityOutcomes/Outputs/GeometricMeansPerIteration"
 #allocate folder to hold raw relative occupancy values, for further apraisal 
-raw_rel_occ_folder <- "Outputs/Rel_Occ_PerIteration"
+raw_rel_occ_folder <- "Outputs/Rel_Occ_PerIterationSept24"
 
 for (w in seq_along(occ60_files)){
   occ60 <- readRDS(occ60_files[[w]])
@@ -537,8 +539,8 @@ for (w in seq_along(occ60_files)){
   saveRDS(rel_occ, file = occ_file_path)
 }
 
-#--------  read in geom means ----------------------
-relOcc_result_folder <- "Outputs/Rel_Occ_PerIteration"
+#--------  read in summarized outputs ----------------------
+relOcc_result_folder <- "Outputs/Rel_Occ_PerIterationSept24"
 relOcc_files <- list.files(relOcc_result_folder, pattern = "^OGbaseline.*\\.rds$", full.names = TRUE)
 
 relOcc <- lapply(geomMean_files, relOcc_files)
@@ -607,5 +609,5 @@ outputIUCN <- final_IUCN %>% select(index, production_target, scenarioName,scena
 # saveRDS(outputIUCN, "R_code/AllOutcomesFigure/Data/birdsIUCN.rds")
 
 #outputs when using fully primary baseline
-saveRDS(output, "FinalPerformanceOutput/OG_baseline_birds.rds")
-saveRDS(outputIUCN, "FinalPerformanceOutput/OG_baseline_birdsIUCN.rds")
+saveRDS(output, "FinalPerformanceOutput/OG_baseline_birdsSept24.rds")
+saveRDS(outputIUCN, "FinalPerformanceOutput/OG_baseline_birdsIUCNSept24.rds")
