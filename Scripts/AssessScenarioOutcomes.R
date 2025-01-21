@@ -46,11 +46,26 @@ birds <- readRDS("Inputs/occ500drawsSept24.rds")
 
 #----read in Bird IUCN information 
 IUCN_classification <- read.csv("Inputs/AllBorneoSpeciesTraits.csv") %>% 
-  select(spp, redlistCategory) %>% unique()%>% rename(species = spp) %>% as.data.table() %>%  
+  select(spp, redlistCategory) %>% unique() %>% as.data.table() %>%  
+  # Update `redlistCategory` for specific species
+  mutate(redlistCategory = case_when(
+    spp == "Ferruginous Babbler" ~ "Least Concern",
+    spp == "White-chested Babbler" ~ "Near Threatened",
+    spp == "Rufous-tailed Shama" ~ "Near Threatened",
+    spp == "Chestnut-necklaced Partridge" ~ "Vulnerable",
+    spp == "Short-tailed Babbler" ~ "Near Threatened",
+    spp == "White-rumped Shama" ~ "Least Concern",
+    spp == "Olive-backed Woodpecker" ~ "Near Threatened",
+    spp == "Blue-banded Pitta" ~ "Least Concern",
+    spp == "Banded Kingfisher" ~ "Least Concern",
+    spp == "Banded Woodpecker" ~ "Least Concern",
+    TRUE ~ redlistCategory # Keep original values
+  )) %>% 
   mutate(threatened = case_when(
     redlistCategory != "Least Concern" & redlistCategory != "" ~ "Y",
     TRUE ~ "N"
-  ))
+  )) %>% 
+   rename(species = spp)
 
 
 # ------ PROCESS BIRD OCCUPANCY DATA ACROSS POSTERIOR DRAWS  ------------
@@ -247,7 +262,7 @@ species_filt <- birds %>%
   unique %>% slice(31:60)
 
 #NB there is considerable uncertainty in occupancy through time; make sure to get this across in manuscript
-#plot occupancy by species and habitat (with Confidence intervals)
+#plot occupancy by species and habitat (with credible intervals)
 birds %>% 
   filter(habitat %in% c("primary", "once-logged", "twice-logged", "restored")) %>% 
   #filter(species == "Helmeted Hornbill") %>% 
@@ -300,6 +315,10 @@ function_SL_60yr_uncertainty <- function(single_scenario_i, processed_birds_i) {
 execute_SL_fun <-function(zeta) {
   single_scenario_name <- combinations_SL$scenarioStart[zeta]
   processed_birds_name <- combinations_SL$species[zeta]
+  
+  # Print progress
+  print(paste("Processing scenario:", single_scenario_name, "with species:", processed_birds_name, "(", zeta, "of", nrow(combinations_SL), ")"))
+  
   
   single_scenario_i <- all_start_landscape_scaled[scenarioStart == single_scenario_name]
   processed_birds_i <- processed_birds[species == processed_birds_name]
@@ -463,7 +482,7 @@ for (k in seq_along(csv_files)){
 
 #-----------------calculate rel occ for each  iteration and species category ----
 cap <- 1.5 # don't allow scenario occ to be more than 1.5 starting landscape occ [only used if calculating geometric mean]
-sppCategories <- readRDS("R_code/AssessBiodiversityOutcomes/Outputs/sppCategoriesSept24.rds")
+sppCategories <- readRDS("Outputs/sppCategoriesSept24.rds")
 sppCategories<- as.data.table(sppCategories)
 
 rds_folder <- "Outputs/occ60PerScenarioIterationSept24"
@@ -472,7 +491,7 @@ occ60_files <- list.files(rds_folder, pattern = "*.rds", full.names = TRUE)
 #occ60_files <- occ60_files[2:3]
 
 #SL_60yrOcc 
-SL_occ60 <- readRDS("Outputs/SL_occ60yr_perIterationSept24.rds") 
+SL_occ60 <- readRDS("Outputs/SLoccOutputs/SL_occ60yr_perIterationSept24.rds") 
 SL_occ60_dt <- rbindlist(SL_occ60) %>%
   rename(SL_occ_60yr = occ_60yr)
 
@@ -483,6 +502,7 @@ SL_all_primary_dt<- SL_occ60_dt %>% filter(scenarioStart == "all_primary")
 #geom_result_folder <- "R_code/AssessBiodiversityOutcomes/Outputs/GeometricMeansPerIteration"
 #allocate folder to hold raw relative occupancy values, for further apraisal 
 raw_rel_occ_folder <- "Outputs/Rel_Occ_PerIterationSept24"
+#raw_rel_occ_folder <- "Outputs/Rel_Occ_PerIterationGrp"
 
 for (w in seq_along(occ60_files)){
   occ60 <- readRDS(occ60_files[[w]])
@@ -510,11 +530,11 @@ for (w in seq_along(occ60_files)){
   occ_comb <- occ60_dt[SL_all_primary_dt, on = .(species, iteration), nomatch = 0]
   
   
-  #calculate rel_occ; if rel_occ is > cap, replace with cap, to ensure scenario landscape cannot be more than 1.5 of starting landscape
-  #occ_comb[, rel_occ_capped := pmin((occ_60yr / SL_occ_60yr), cap)]
+  # #calculate rel_occ; if rel_occ is > cap, replace with cap, to ensure scenario landscape cannot be more than 1.5 of starting landscape
+    occ_comb[, rel_occ := pmin((occ_60yr / SL_occ_60yr), cap)]
   
-  #calculate rel_occ -uncapped, for calculating median 
-  occ_comb <- occ_comb[, rel_occ := occ_60yr / SL_occ_60yr]
+# calculate rel_occ -uncapped, for calculating median
+ # occ_comb <- occ_comb[, rel_occ := occ_60yr / SL_occ_60yr]
   
   #export raw relative occupancy values 
   #saveRDS(occ_comb, file = "relOcc_file_path")
@@ -531,25 +551,73 @@ for (w in seq_along(occ60_files)){
   
   #summarise species-level median rel occ across 500 iterations 
   
-  # Summarize species-level median rel occ across iterations
-  rel_occ <- occ_comb[, .(SppMedRelOcc = median(rel_occ, na.rm = TRUE)), 
-                         by = .(species, index, production_target)]
+  # # This gives the median rel occ with error per species basis - for indivdual species-level plotting
+  #we can use the median and the error for individual species plotting
   
+  #or we can take the median across species groups to consider the average outcomes across species grouping
+  #though error is very big in this case) 
+  rel_occ <- occ_comb %>%  group_by(species, index, production_target) %>%  
+    summarize(
+      medianRelativeOccupancy = median(rel_occ, na.rm = TRUE),
+      meanRelativeOccupancy = mean(rel_occ, na.rm = TRUE),
+      p1_medianRelativeOccupancy = quantile(rel_occ, 0.1, na.rm = TRUE),
+      p9_medianRelativeOccupancy = quantile(rel_occ, 0.9, na.rm = TRUE)
+    )
+  
+  # 
+  # 
+  # rel_occ <- occ_comb[, .(
+  #   medianRelativeOccupancy = median(rel_occ, na.rm = TRUE),
+  #   p1_medianRelativeOccupancy = quantile(rel_occ, 0.1, na.rm = TRUE),
+  #   p9_medianRelativeOccupancy = quantile(rel_occ, 0.9, na.rm = TRUE)
+  # ), by = .(species, index, production_target)]
+  # 
+  # 
+  # #summarise posterior draws directly over the sp grp (ie over losers, winners etc.)
+  # rel_occ_grp <- occ_comb[, .(
+  #   medianRelativeOccupancy = median(rel_occ, na.rm = TRUE),
+  #   p1_medianRelativeOccupancy = quantile(rel_occ, 0.1, na.rm = TRUE),
+  #   p9_medianRelativeOccupancy = quantile(rel_occ, 0.9, na.rm = TRUE)
+  # ), by = .(spp_category, index, production_target)]
+  # 
+  # 
+
   #save the output to an rds folder 
   saveRDS(rel_occ, file = occ_file_path)
 }
 
 #--------  read in summarized outputs ----------------------
+# #outputs grpe by category
+# relOcc_result_folder <- "Outputs/Rel_Occ_PerIterationGrp"
+# grp_rds_files <- list.files(path = relOcc_result_folder, pattern = "\\.rds$", full.names = TRUE)
+# grp_relOcc_list <- lapply(grp_rds_files, readRDS)
+# grp_rel_occ_df <-rbindlist(grp_relOcc_list)
+# grp_rel_occ_df <- grp_rel_occ_df %>% ungroup() %>%   left_join(scenario_composition, by = c("index", "production_target"))# %>% 
+
 relOcc_result_folder <- "Outputs/Rel_Occ_PerIterationSept24"
-relOcc_files <- list.files(relOcc_result_folder, pattern = "^OGbaseline.*\\.rds$", full.names = TRUE)
+# Get the list of all RDS files in the folder
+rds_files <- list.files(path = relOcc_result_folder, pattern = "\\.rds$", full.names = TRUE)
+relOcc_list <- lapply(rds_files, readRDS)
+rel_occ_df <-rbindlist(relOcc_list) %>%  
+  left_join(IUCN_classification, by = "species") %>%  
+  left_join(sppCategories)
 
-relOcc <- lapply(geomMean_files, relOcc_files)
-
-rel_occ_df <-rbindlist(relOcc_files)
 helmeted_hornbill <- rel_occ_df  %>% filter(species == "Helmeted Hornbill")
 greatArgus <-  rel_occ_df  %>% filter(species == "Great Argus")
-#----- summarise geom means and across posterior draws  -----
 
+#add IUCN
+
+# #find the min and max rel-occ for each species of a given index 
+# summary_spread <- rel_occ_df %>% left_join(spp) %>%  
+#   group_by(index) %>%
+#   summarize(
+#     Min_SpMedRelOcc = min(SppMedRelOcc),
+#     Max_SpMedRelOcc = max(SppMedRelOcc),
+#     .groups = "drop"
+#   )
+
+
+#----- summarise relative abundance across groups of species for which have median relative occupancy  -----
 
 #summarised across data that has already been medianed per spp from 500 draws
 
@@ -558,56 +626,66 @@ greatArgus <-  rel_occ_df  %>% filter(species == "Great Argus")
 summarise_across_posterior_fun <- function(x){
   x %>% left_join(sppCategories, by = "species") %>%
     group_by(spp_category, index, production_target) %>%  
-    summarise(medianRelativeOccupancy = median(SppMedRelOcc),
-              p5_medianRelativeOccupancy = quantile(SppMedRelOcc, 0.05),
-              p95_medianRelativeOccupancy = quantile(SppMedRelOcc, 0.95), 
-              IQR = IQR(SppMedRelOcc))
+    summarise(medianRelativeOccupancy = median(medianRelativeOccupancy),
+              p1_medianRelativeOccupancy = quantile(medianRelativeOccupancy, 0.1),
+              p9_medianRelativeOccupancy = quantile(medianRelativeOccupancy, 0.9), 
+              IQR_medianRelativeOccupancy = IQR(medianRelativeOccupancy), 
+              geometric_mean = exp(mean(log(medianRelativeOccupancy), na.rm = TRUE)),
+              p1_geometric_mean = exp(quantile(log(medianRelativeOccupancy), 0.1, na.rm = TRUE)),
+              p9_geometric_mean = exp(quantile(log(medianRelativeOccupancy), 0.9, na.rm = TRUE))
+    )
+   
   
 }
 #---output of summarised statistics across posterior draws ----
-final_relOcc <- lapply(relOcc, summarise_across_posterior_fun)
-final_relOcc <- rbindlist(final_relOcc)
+final_relOcc <- summarise_across_posterior_fun(rel_occ_df)
 
 #add back in key information 
-final_relOcc <- final_relOcc %>%  left_join(scenario_composition, by = c("index", "production_target"))# %>% 
+final_relOcc <- final_relOcc %>% ungroup() %>%   left_join(scenario_composition, by = c("index", "production_target"))# %>% 
 
 
 #for IUCN near threatened species 
 summarise_IUCN_across_posterior_fun <- function(x){
   x %>% left_join(IUCN_classification, by = "species") %>%
     group_by(threatened, index, production_target) %>%  
-    summarise(medianRelativeOccupancy = median(SppMedRelOcc),
-              p5_medianRelativeOccupancy = quantile(SppMedRelOcc, 0.05),
-              p95_medianRelativeOccupancy = quantile(SppMedRelOcc, 0.95), 
-              IQR = IQR(SppMedRelOcc))
+    summarise(medianRelativeOccupancy = median(medianRelativeOccupancy),
+              p1_medianRelativeOccupancy = quantile(medianRelativeOccupancy, 0.1),
+              p9_medianRelativeOccupancy = quantile(medianRelativeOccupancy, 0.9), 
+              IQR_medianRelativeOccupancy = IQR(medianRelativeOccupancy),
+              geometric_mean = exp(mean(log(medianRelativeOccupancy), na.rm = TRUE)),
+              p1_geometric_mean = exp(quantile(log(medianRelativeOccupancy), 0.1, na.rm = TRUE)),
+              p9_geometric_mean = exp(quantile(log(medianRelativeOccupancy), 0.9, na.rm = TRUE))
+    )
   
 }
 
-final_IUCN <- lapply(final_relOcc, summarise_IUCN_across_posterior_fun)
-final_IUCN <- rbindlist(final_IUCN)
+final_IUCN <- summarise_IUCN_across_posterior_fun(rel_occ_df)
 
 #add back in key information 
 final_IUCN <- final_IUCN %>%  left_join(scenario_composition, by = c("index", "production_target"))# %>% 
 
 
-
 #-----EXPORT OUTCOME PERFORMANCE for consolidated figure of all outcomes -----
 getwd()
-names(final_geoms)
 #output of grouping by winner, loser, int
-output <- final_relOcc %>% select(index, production_target, scenarioName,scenarioStart,
-                                 medianRelativeOccupancy,p5_medianRelativeOccupancy, p95_medianRelativeOccupancy,
+output <- final_relOcc %>%
+select(index, production_target, scenarioName,scenarioStart,
+                                 medianRelativeOccupancy,p1_medianRelativeOccupancy, p9_medianRelativeOccupancy,IQR_medianRelativeOccupancy,
+       geometric_mean, p1_geometric_mean,  p9_geometric_mean,
                                  spp_category) %>% cbind(outcome = "birds")
 
 #output of grouping by IUCN threatened or not
-outputIUCN <- final_IUCN %>% select(index, production_target, scenarioName,scenarioStart,
-                                    medianRelativeOccupancy,p5_medianRelativeOccupancy, p95_medianRelativeOccupancy,
+outputIUCN <- final_IUCN %>% select(index, production_target, scenarioName,scenarioStart,IQR_medianRelativeOccupancy, 
+                                    geometric_mean, p1_geometric_mean,  p9_geometric_mean,
+                                    medianRelativeOccupancy,p1_medianRelativeOccupancy, p9_medianRelativeOccupancy,
                                     threatened) %>% cbind(outcome = "birds")
 
-#outuput when using starting landscape as baseline 
-# saveRDS(output, "R_code/AllOutcomesFigure/Data/birds.rds")
-# saveRDS(outputIUCN, "R_code/AllOutcomesFigure/Data/birdsIUCN.rds")
-
-#outputs when using fully primary baseline
+#outputs when using fully primary baseline and when calculating median across species groupings for main figures
 saveRDS(output, "FinalPerformanceOutput/OG_baseline_birdsSept24.rds")
 saveRDS(outputIUCN, "FinalPerformanceOutput/OG_baseline_birdsIUCNSept24.rds")
+
+#output when instead calculating median and CI relative abundance on a per-species basis; this
+#reliably shows error on a per-species basis.
+
+saveRDS(rel_occ_df, "FinalPerformanceOutput/species_level_relative_occ.rds")
+
