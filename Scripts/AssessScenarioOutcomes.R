@@ -263,9 +263,12 @@ species_filt <- birds %>%
 
 #NB there is considerable uncertainty in occupancy through time; make sure to get this across in manuscript
 #plot occupancy by species and habitat (with credible intervals)
+
 birds %>% 
   filter(habitat %in% c("primary", "once-logged", "twice-logged", "restored")) %>% 
-  #filter(species == "Helmeted Hornbill") %>% 
+ # filter(species == "Great Argus ") %>% 
+  # filter(species == "Great Argus ") %>% 
+  
   filter(species %in% species_filt$species) %>% 
   
   ggplot(aes(functionalhabAge, occ)) +
@@ -364,7 +367,10 @@ function_scenario_60yr_uncertainty <- function(single_scenario_i, processed_bird
   
   # Step 4: Calculate occ_60yr for each iteration and species
   #[calculate occ60 for each iteration and species]
-  result <- result[, .(occ_60yr = sum(landscape_occ)), 
+  
+  #TRY TIME-AVERAGED (MEDIAN) INSTEAD OF SUM!!!!!!!!!!
+  #!!!!!!!!Havent run yet!!!!!!!!!!
+  result <- result[, .(occ_60yr = median(landscape_occ)), 
                    by = .(species, index, iteration, production_target)]
   
   # # Step 5: Summarise across posterior draws
@@ -386,7 +392,7 @@ delayFilters <- c("delay 0", "delay 29")
 harvest_window <-  length(delayFilters)##how many harvest delays?
 
 #set a folder for saving outputs, showing for each species and scenario and iteration, occ_60 for lanscape
-rds_folder <- "Outputs/occ60PerScenarioIterationSept24"
+rds_folder <- "Outputs/occ60PerScenarioIterationJan25"
 
 for (k in seq_along(csv_files)){
   
@@ -479,6 +485,11 @@ for (k in seq_along(csv_files)){
   cat("Elapsed time: ", timing[3], " seconds\n")
 }
 
+#test test test #stores medianed (time-averaged) information instead of summed 
+#for one scenario group (primary_ND)
+#now summarise occ_year by spp and plot to see if some CI dont overlap 
+result_list
+
 
 #-----------------calculate rel occ for each  iteration and species category ----
 cap <- 1.5 # don't allow scenario occ to be more than 1.5 starting landscape occ [only used if calculating geometric mean]
@@ -561,7 +572,10 @@ for (w in seq_along(occ60_files)){
       medianRelativeOccupancy = median(rel_occ, na.rm = TRUE),
       meanRelativeOccupancy = mean(rel_occ, na.rm = TRUE),
       p1_medianRelativeOccupancy = quantile(rel_occ, 0.1, na.rm = TRUE),
-      p9_medianRelativeOccupancy = quantile(rel_occ, 0.9, na.rm = TRUE)
+      p9_medianRelativeOccupancy = quantile(rel_occ, 0.9, na.rm = TRUE),
+      # Calculate 70% HPD intervals because of right skewed posterior distribution
+      hpd_70_lower = hdi(rel_occ, ci = 0.7)$CI_low,
+      hpd_70_upr = hdi(rel_occ, ci = 0.7)$CI_high,
     )
   
   # 
@@ -586,6 +600,8 @@ for (w in seq_along(occ60_files)){
   saveRDS(rel_occ, file = occ_file_path)
 }
 
+
+occ60_list <- lapply(occ60_files, readRDS)
 #--------  read in summarized outputs ----------------------
 # #outputs grpe by category
 # relOcc_result_folder <- "Outputs/Rel_Occ_PerIterationGrp"
@@ -604,6 +620,40 @@ rel_occ_df <-rbindlist(relOcc_list) %>%
 
 helmeted_hornbill <- rel_occ_df  %>% filter(species == "Helmeted Hornbill")
 greatArgus <-  rel_occ_df  %>% filter(species == "Great Argus")
+
+#------------------------------------------
+#Rapid explorator single-species plot 
+#------------------------------------------
+helmeted_hornbill %>% 
+left_join(scenario_composition) %>%
+  # Add information on proportion of plantation
+  mutate(propPlant = sum(num_parcels[habitat %in% c("eucalyptus_current", "albizia_current", "albizia_future", "eucalyptus_future")]) / 1000) %>%
+  # Remove unnecessary information
+  select(!c(num_parcels, habitat, original_habitat)) %>%
+  unique() %>%
+  # Filter production target range
+  #filter(production_target %in% seq(0, 1, by = 0.05)) %>%
+  group_by(index) %>%
+  ggplot(aes(x = production_target, y = medianRelativeOccupancy)) +  # 
+  # Set shape based on propPlant > 0 (triangle for propPlant > 0, circle for propPlant == 0)
+  geom_point(aes(shape = propPlant > 0 ,color = propPlant > 0), size = 3) +  
+  geom_errorbar(aes(
+    # ymin = p1_medianRelativeOccupancy,
+    # ymax = p9_medianRelativeOccupancy,
+    
+    ymin = hpd_95_lower,
+    ymax = hpd_95_upr,
+  ),
+  width = 0.02,  # Horizontal cap width
+  alpha = 0.8,   # Fainter error bars
+  size = 0.5     # Thinner error bars
+  ) + 
+  theme_bw() +
+  theme(legend.position = 'none')  # Remove the legend
+
+
+
+
 
 #add IUCN
 
