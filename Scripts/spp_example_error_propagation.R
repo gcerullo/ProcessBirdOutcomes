@@ -313,6 +313,8 @@ cap <- 1.5 # don't allow scenario occ to be more than 1.5 starting landscape occ
       # Calculate HPD intervals (95% by default)
       hpd_95_lower = hdi(rel_occ, ci = 0.7)$CI_low,
       hpd_95_upr = hdi(rel_occ, ci = 0.7)$CI_high,
+      hpd_50_lower = hdi(rel_occ, ci = 0.5)$CI_low,
+      hpd_50_upr = hdi(rel_occ, ci = 0.5)$CI_high,
       sd_60yr_error = sd(occ_60yr))
 
 #Which scenarios have the most uncertainty for helmeted hornbill? 
@@ -360,7 +362,6 @@ rel_occ_sum %>%
     theme_bw() +
     theme(legend.position = 'none')  # Remove the legend
   
-rel_occ_sum$hpd_95_upper
 
   
 #   

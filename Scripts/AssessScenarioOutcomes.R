@@ -18,6 +18,8 @@ library(foreach)
 library(doParallel)
 library(purrr)
 library(profvis)
+install.packages("bayestestR", repos = "https://easystats.r-universe.dev")
+library(bayestestR)
 
 
 #read in the scenario parametres containing conversion factors for converting from point to parcel/entire landscape  
@@ -31,6 +33,8 @@ options(datatable.cautious = 100e6)
 #-----read in scenarios without delays to get scenario composition -------
 scenarios <- readRDS("Inputs/MasterAllScenarios.rds")
 scenario_composition <- rbindlist(scenarios, use.names=TRUE) # get scenario composition
+starting_scenario_structure <- scenario_composition %>% 
+  select(production_target, index, scenarioStart) %>% unique()
 rm(scenarios)
 
 #read in scenarios WITH delays, where every scenarioType is a single csv
@@ -368,10 +372,10 @@ function_scenario_60yr_uncertainty <- function(single_scenario_i, processed_bird
   # Step 4: Calculate occ_60yr for each iteration and species
   #[calculate occ60 for each iteration and species]
   
-  #TRY TIME-AVERAGED (MEDIAN) INSTEAD OF SUM!!!!!!!!!!
-  #!!!!!!!!Havent run yet!!!!!!!!!!
-  result <- result[, .(occ_60yr = median(landscape_occ)), 
-                   by = .(species, index, iteration, production_target)]
+  # #TRY TIME-AVERAGED (MEDIAN) INSTEAD OF SUM!!!!!!!!!!
+  # #!!!!!!!!Havent run yet!!!!!!!!!!
+  # result <- result[, .(occ_60yr = median(landscape_occ)), 
+  #                  by = .(species, index, iteration, production_target)]
   
   # # Step 5: Summarise across posterior draws
   # result <- result [, .(mean_60yr = mean(occ_60yr),
@@ -508,7 +512,7 @@ SL_occ60_dt <- rbindlist(SL_occ60) %>%
 
 #EXTRACT ONLY THE BASELINE ALL_PRIMARY SL
 SL_all_primary_dt<- SL_occ60_dt %>% filter(scenarioStart == "all_primary") 
-
+rm(SL_occ60_dt)
 # Allocate folder for geomresults
 #geom_result_folder <- "R_code/AssessBiodiversityOutcomes/Outputs/GeometricMeansPerIteration"
 #allocate folder to hold raw relative occupancy values, for further apraisal 
@@ -576,6 +580,8 @@ for (w in seq_along(occ60_files)){
       # Calculate 70% HPD intervals because of right skewed posterior distribution
       hpd_70_lower = hdi(rel_occ, ci = 0.7)$CI_low,
       hpd_70_upr = hdi(rel_occ, ci = 0.7)$CI_high,
+      hpd_50_lower = hdi(rel_occ, ci = 0.5)$CI_low,
+      hpd_50_upr = hdi(rel_occ, ci = 0.5)$CI_high,
     )
   
   # 
@@ -599,7 +605,66 @@ for (w in seq_along(occ60_files)){
   #save the output to an rds folder 
   saveRDS(rel_occ, file = occ_file_path)
 }
+###################################################
+#################################################
+##################################################
+#FOR UNCERTAINTY -calculate proportion of scenarios where logging is better than plantations
+#set older for storing best scenario (logging or plantation) for each production target
+best_scenario_folder <- "Outputs/BestScenarioUncertainty"
 
+#how often are plantation scenarios better than logging scenarios 
+logging_or_plantation_scenarios <- scenario_composition %>%  
+  group_by(index, production_target) %>%  
+  # Add information on proportion of plantation
+  mutate(propPlant = sum(num_parcels[habitat %in% c("eucalyptus_current", "albizia_current", "albizia_future", "eucalyptus_future")]) / 1000) %>%  
+  select(index, production_target, propPlant, scenarioStart) %>% 
+  mutate(treatment_strategy = case_when(
+    propPlant > 0 ~ "plantation",
+    propPlant == 0 ~ "logging"
+  )) %>%    select(-propPlant) %>%  unique() %>%  
+  as.data.table()
+
+for (w in seq_along(occ60_files)){
+  occ60 <- readRDS(occ60_files[[w]])
+  occ60_dt <- rbindlist(occ60)
+    rds_file_name <- paste("BestScenario_", basename(occ60_files[[w]]), sep = "")
+    best_scenario_file_path <- file.path(best_scenario_folder, rds_file_name)   
+
+  #add starting landscape to scenarios 
+  scenarioStart <- occ60_dt %>% select(index, production_target) %>%
+    unique() %>% left_join(scenario_composition, by = c("index", "production_target")) %>%  
+    select(scenarioStart) %>% unique() %>% drop_na()
+  occ60_dt[, scenarioStart := scenarioStart]
+  
+  #NB this conveys each species starting landscape occupancy
+  occ_comb <- occ60_dt[SL_all_primary_dt, on = .(species, iteration), nomatch = 0]
+  
+  #calculate rel_occ
+  occ_comb <- occ_comb[, rel_occ := occ_60yr / SL_occ_60yr]
+  
+  #add in scenario composition to highlight logging vs plantation scenarios
+  occ_comb <- occ_comb %>% left_join(logging_or_plantation_scenarios)
+  
+  #for each production target and species, find the proportion of iterations where the best scenario 
+  #(ie with the highest relOcc) is plantation-dominated. 
+  #Do this for PAIRED scenario draws (ie iterations of the model)
+  best_scenario <- occ_comb %>%  group_by(species, production_target, iteration) %>% 
+    filter(rel_occ == max(rel_occ)) %>%  
+    select(species, iteration, production_target, treatment_strategy, rel_occ) %>%  
+    rename(max_rel_occ = rel_occ) %>% unique()
+  
+  #save the output to an rds folder 
+  saveRDS(best_scenario, file = best_scenario_file_path)
+}
+
+#This would be an example of paired scenario draws (ie based on the same model params)
+PairedExample <- occ_comb %>% filter(species == "Helmeted Hornbill" & iteration == 'draw_459' & production_target == 1)
+
+x %>% filter(rel_occ == max(rel_occ))
+
+###################################################
+###################################################
+##################################################
 
 occ60_list <- lapply(occ60_files, readRDS)
 #--------  read in summarized outputs ----------------------
@@ -620,39 +685,99 @@ rel_occ_df <-rbindlist(relOcc_list) %>%
 
 helmeted_hornbill <- rel_occ_df  %>% filter(species == "Helmeted Hornbill")
 greatArgus <-  rel_occ_df  %>% filter(species == "Great Argus")
-
+losers <- sppCategories %>% filter(spp_category == "loser")
 #------------------------------------------
 #Rapid explorator single-species plot 
 #------------------------------------------
-helmeted_hornbill %>% 
+print(losers)
+
+
+# Add a jittered x column to the data
+set.seed(123) # Set seed for reproducibility
+rel_occ_df <- rel_occ_df %>%
+  mutate(jittered_x = production_target + runif(n(), -0.02, 0.02)) # Shared jitter
+
+#Species with clear effect 4,14,24 
+#21
+#pick a loser species
+loser_spp <- losers[4] %>%
+  select(species) %>%  pull
+
+#rapid plot [70% CI] - for one speices 
+rel_occ_df %>% 
+  # filter(species == loser_spp) %>%
+  filter(species %in% loser_spp) %>% 
+  
 left_join(scenario_composition) %>%
+  left_join(starting_scenario_structure) %>% 
   # Add information on proportion of plantation
+  filter(scenarioStart == "all_primary") %>% 
+  group_by(index) %>%
+  
   mutate(propPlant = sum(num_parcels[habitat %in% c("eucalyptus_current", "albizia_current", "albizia_future", "eucalyptus_future")]) / 1000) %>%
   # Remove unnecessary information
   select(!c(num_parcels, habitat, original_habitat)) %>%
   unique() %>%
   # Filter production target range
-  #filter(production_target %in% seq(0, 1, by = 0.05)) %>%
-  group_by(index) %>%
-  ggplot(aes(x = production_target, y = medianRelativeOccupancy)) +  # 
+  filter(production_target %in% seq(0, 1, by = 0.1)) %>%
+ # ggplot(aes(x = production_target, y = medianRelativeOccupancy)) +  # 
+  
+  #OR allow a jitter
+   ggplot(aes(x = jittered_x, y = medianRelativeOccupancy)) +  # 
   # Set shape based on propPlant > 0 (triangle for propPlant > 0, circle for propPlant == 0)
   geom_point(aes(shape = propPlant > 0 ,color = propPlant > 0), size = 3) +  
   geom_errorbar(aes(
     # ymin = p1_medianRelativeOccupancy,
     # ymax = p9_medianRelativeOccupancy,
     
-    ymin = hpd_95_lower,
-    ymax = hpd_95_upr,
+    ymin = hpd_70_lower,
+    ymax = hpd_70_upr,
   ),
   width = 0.02,  # Horizontal cap width
   alpha = 0.8,   # Fainter error bars
   size = 0.5     # Thinner error bars
-  ) + 
+  ) +  #
   theme_bw() +
-  theme(legend.position = 'none')  # Remove the legend
+  theme(legend.position = 'none')+
+  facet_wrap(~species)#
 
 
 
+#for many species
+# Split species into chunks of 30
+rel_occ_df_loser <- rel_occ_df %>% filter(spp_category == "loser")
+
+select_spp <- rel_occ_df #all species
+select_spp <- rel_occ_df_loser
+
+species_chunks <- split(unique(select_spp$species), ceiling(seq_along(unique(select_spp$species)) / 30))
+
+# Loop through each chunk and create/save a plot
+for (i in seq_along(species_chunks)) {
+  
+  # Filter for the current chunk of species
+  chunk_data <- rel_occ_df %>%
+    filter(species %in% species_chunks[[i]]) %>%
+    left_join(scenario_composition) %>%
+   # left_join(starting_scenario_structure, by = "index") %>%
+    filter(scenarioStart == "all_primary") %>%
+    group_by(index) %>%
+    mutate(propPlant = sum(num_parcels[habitat %in% c("eucalyptus_current", "albizia_current", "albizia_future", "eucalyptus_future")]) / 1000) %>%
+    select(-c(num_parcels, habitat, original_habitat)) %>%
+    unique()
+  
+  # Plot and save for the current chunk
+  p <- ggplot(chunk_data, aes(x = production_target, y = medianRelativeOccupancy)) +
+    geom_point(aes(shape = propPlant > 0, color = propPlant > 0), size = 3) +
+    geom_errorbar(aes(ymin = hpd_70_lower, ymax = hpd_70_upr, ), width = 0.02, alpha = 0.8, size = 0.5) +
+    theme_bw() +
+    theme(legend.position = 'none') +
+    facet_wrap(~species, scales = 'free_y')
+  
+  # Save the plot
+  ggsave(paste0("Figures/plot_chunk_05", i, ".png"), plot = p, width = 10, height = 8, dpi = 300)
+}
+getwd()
 
 
 #add IUCN
