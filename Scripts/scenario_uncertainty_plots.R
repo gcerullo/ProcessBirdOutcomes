@@ -116,11 +116,10 @@ alldataplot <-  df_sum %>%
    )
  
  
-#######################################
-##########################################################
-#Plot uncertaubty when using multiple production target filters 
 
-# Define a function to preprocess the data
+##########################################
+#For threatened and loser species, plot uncertainty for multiple production targets 
+
 process_data <- function(df, production_threshold, sppCategories, IUCN_classification) {
   df_filtered <- df %>% filter(production_target > production_threshold)
   
@@ -157,13 +156,13 @@ process_data <- function(df, production_threshold, sppCategories, IUCN_classific
   sp_prefer_plantation_dominated_production <- df_sum %>%
     filter(treatment_strategy == "plantation" & percentage > 0.5)
   
-  list(df_sum = df_sum, loser_spp = loser_spp)
+  list(df_sum = df_sum, loser_spp = loser_spp, threatened_sp = threatened_sp)
 }
 
-# Define a function to generate plots
-generate_plot <- function(df_sum, loser_spp, show_species_labels = FALSE) {
+
+generate_plot <- function(df_sum, species_filter, show_species_labels = FALSE) {
   df_sum %>%
-    filter(species %in% loser_spp) %>%
+    filter(species %in% species_filter) %>%
     group_by(species) %>%
     mutate(max_plantation = max(percentage[treatment_strategy == "plantation"])) %>%
     ungroup() %>%
@@ -176,6 +175,8 @@ generate_plot <- function(df_sum, loser_spp, show_species_labels = FALSE) {
     coord_flip() +
     scale_fill_manual(
       values = c("logging" = "#E69F00", "plantation" = "#56B4E9"),
+      labels = c("Selective-logging Best", "Plantations Best")  # Legend labels
+      
     ) +
     labs(
       x = NULL,
@@ -195,24 +196,64 @@ generate_plot <- function(df_sum, loser_spp, show_species_labels = FALSE) {
     )
 }
 
-# Process data and generate plots for 0.25, 0.5, and 0.75 thresholds
+
+# Process data for 0.25, 0.5, and 0.75 thresholds
+resultalldata <- process_data(df, 0, sppCategories, IUCN_classification)
 result025 <- process_data(df, 0.25, sppCategories, IUCN_classification)
-plot025 <- generate_plot(result025$df_sum, result025$loser_spp, show_species_labels = FALSE)
-
 result05 <- process_data(df, 0.5, sppCategories, IUCN_classification)
-plot05 <- generate_plot(result05$df_sum, result05$loser_spp, show_species_labels = FALSE)
-
 result075 <- process_data(df, 0.75, sppCategories, IUCN_classification)
-plot75 <- generate_plot(result075$df_sum, result075$loser_spp, show_species_labels = FALSE)
 
-#COMBINED FIGURE
+# Generate plots for loser species #####
+plotalldata_loser <- generate_plot(resultalldata$df_sum, resultalldata$loser_spp, show_species_labels = TRUE)
+plot025_loser <- generate_plot(result025$df_sum, result025$loser_spp, show_species_labels = FALSE)
+plot05_loser <- generate_plot(result05$df_sum, result05$loser_spp, show_species_labels = FALSE)
+plot75_loser <- generate_plot(result075$df_sum, result075$loser_spp, show_species_labels = FALSE)
+
+# Generate plots for threatened species ####
+plotalldata_threatened <- generate_plot(resultalldata$df_sum, resultalldata$threatened_sp, show_species_labels = TRUE)
+plot025_threatened <- generate_plot(result025$df_sum, result025$threatened_sp, show_species_labels = FALSE)
+plot05_threatened <- generate_plot(result05$df_sum, result05$threatened_sp, show_species_labels = FALSE)
+plot75_threatened <- generate_plot(result075$df_sum, result075$threatened_sp, show_species_labels = FALSE)
+
+
+#combined figure losers ####
+
+#combined figure losers ####
 # Combine the three plots into a single figure
-combined_plot <- plot_grid(
-  alldataplot + labs(title = "All data"),  # Add a title to each plot
-  plot05 + labs(title = "Production Threshold > 0.5"),
-  plot75 + labs(title = "Production Threshold > 0.75"),
+combined_plot_losers_multiple_production_targets <- plot_grid(
+  plotalldata_loser + labs(title = "All Scenarios"),  # Add a title to each plot
+  plot05_loser + labs(title = "   Production > 0.5"),
+  plot75_loser + labs(title = "   Production > 0.75"),
   ncol = 4,  # Arrange the plots in a single column
   labels = c("A", "B", "C"),  # Add labels (optional)
   label_size = 14,  # Size of the labels
   rel_widths = c(1.8, 1, 1)  # Adjust the relative width of the first plot
 )
+
+# Combine the three plots into a single figure
+combined_plot_threatened_multiple_production_targets <- plot_grid(
+  plotalldata_threatened + labs(title = "All Scenarios"),  # Add a title to each plot
+  plot05_threatened + labs(title = "   Production > 0.5"),
+  plot75_threatened + labs(title = "   Production > 0.75"),
+  ncol = 4,  # Arrange the plots in a single column
+  labels = c("A", "B", "C"),  # Add labels (optional)
+  label_size = 14,  # Size of the labels
+  rel_widths = c(1.8, 1, 1)  # Adjust the relative width of the first plot
+)
+
+
+#EXPORT FIGURES 
+# Save the loser species combined plots as A4-sized output
+ggsave("Figures/loser_species_uncertainty_by_production_target_plots_A4.png",
+       combined_plot_losers_multiple_production_targets, 
+       width = 20, height = 11.69, units = "in", 
+       bg = "white")
+
+# Save the threatened species uncertainty by production target plots as A4-sized output with a white background
+ggsave("Figures/threatened_species_uncertainty_by_production_target_plots_A4.png",
+       combined_plot_threatened_multiple_production_targets,
+       width = 20, height = 12, units = "in", 
+       bg = "white")
+
+
+
