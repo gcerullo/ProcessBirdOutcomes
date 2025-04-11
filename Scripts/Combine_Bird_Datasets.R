@@ -857,3 +857,51 @@ write.csv(all_PCs2009_2022, "Outputs/allDanielDaveSimonDetectionsWithLidar.csv")
 #explort dataframe ready for flockr, in next script
 write.csv(full_birds_flockr, "Outputs/birdDataForFlockr.csv")
 
+plantation_age<- read.csv("Outputs/birdDataForFlockr.csv") %>%  
+  rename_with(~ str_to_lower(.)) %>% select(
+  site, point_id, plantation_age
+  ) %>% 
+  filter(!is.na(plantation_age)) %>% 
+  filter(!is.na(site)) %>%  
+  unique() %>%  
+  mutate(point = as.numeric(str_extract(point_id, "\\d+")))  %>%  
+  select(-point_id) 
+
+
+#Creat output for zenodo upload of DK and DE data #####
+
+zenodo <- read.csv("Outputs/allDanielDaveSimonDetectionsWithLidar.csv") %>%  
+  rename_with(~ str_to_lower(.)) %>%  
+  filter(sampler == "Daniel_Kong" | sampler == "David_Edwards") %>%  
+  select(-distance_band, -x) %>%  
+  filter(abundance >0 ) %>%  
+  mutate(point = as.numeric(point)) %>% 
+  left_join(plantation_age, relationship = "many-to-many") %>% 
+  select(spp, abundance,habitat, site, point, day, year, flyover,distance,adjacent, adjacent_hab,h.s.hs, date, time, date_time, longitude, latitude, sampler, logging_year, restoration_year, time_since_logging, time_since_restoration,plantation_age, abc50, abc100, cth50,cth100) %>%  
+  unique()
+
+library(summarytools)
+dfSummary(zenodo)
+
+
+traits <- read.csv("Outputs/AllBorneoSpeciesTraits.csv") %>%  
+  select(spp, LatinName, Family1, Order1, Trophic.Level, Primary.Lifestyle) %>%  
+  rename_with(~ str_to_lower(.))  %>% 
+  unique() %>%  
+  filter(latinname != "Psilopogon duvaucelii") #remove species name duplication, 
+
+zenodo <- zenodo %>% left_join(traits) %>% unique()
+sum(zenodo$abundance)
+unique(zenodo$spp)
+
+#exctract traits for Julia
+traits_for_julia <- read.csv("Outputs/AllBorneoSpeciesTraits.csv") %>%  
+  #select(spp, LatinName, Family1, Order1, Trophic.Level, Primary.Lifestyle) %>%  
+  rename_with(~ str_to_lower(.))  %>% 
+  unique() %>%  
+  filter(latinname != "Psilopogon duvaucelii") #remove species name duplication, 
+
+#export 
+zenodo %>% select(site, habitat,point) %>% unique() %>% group_by(habitat) %>% count()
+write.csv(zenodo, "zenodo/zenodo_2008_20222_bird_data_sabah_GC.csv")
+

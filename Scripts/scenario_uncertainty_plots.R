@@ -241,6 +241,93 @@ combined_plot_threatened_multiple_production_targets <- plot_grid(
   rel_widths = c(1.8, 1, 1)  # Adjust the relative width of the first plot
 )
 
+#------------------------------------------
+#repeat fig for ALL species 
+#------------------------------------------
+
+process_data_all <- function(df, production_threshold, sppCategories, IUCN_classification) {
+  df_filtered <- df %>% filter(production_target > production_threshold)
+  
+  unique_combinations <- df_filtered %>%
+    group_by(species) %>%
+    count() %>%
+    ungroup() %>%
+    select(n) %>%
+    unique() %>%
+    pull()
+  
+  df_sum <- df_filtered %>%
+    unique() %>%
+    group_by(species, treatment_strategy) %>%
+    count() %>%
+    mutate(percentage = n / unique_combinations) %>%
+    left_join(sppCategories, by = "species") %>%
+    left_join(IUCN_classification, by = "species")
+  
+  list(df_sum = df_sum)
+}
+
+generate_plot_all <- function(df_sum, show_species_labels = FALSE) {
+  df_sum %>%
+    group_by(species) %>%
+    mutate(max_plantation = max(percentage[treatment_strategy == "plantation"])) %>%
+    ungroup() %>%
+    arrange(max_plantation) %>%
+    mutate(species = factor(species, levels = unique(species))) %>%
+    mutate(treatment_strategy = factor(treatment_strategy, levels = c("logging", "plantation"))) %>%
+    ggplot(aes(x = species, y = percentage, fill = treatment_strategy)) +
+    geom_bar(stat = "identity", width = 0.7, color = "black", size = 0.3) +
+    geom_hline(yintercept = c(0.25, 0.5, 0.75), linetype = "dashed", color = "black", size = 0.7) +
+    coord_flip() +
+    scale_fill_manual(
+      values = c("logging" = "#E69F00", "plantation" = "#56B4E9"),
+      labels = c("Selective-logging Best", "Plantations Best")
+    ) +
+    labs(
+      x = NULL,
+      y = "Proportion",
+      fill = element_blank()
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_line(color = "gray80", size = 0.5),
+      axis.text.y = if (show_species_labels) element_text(face = "italic", size = 12) else element_blank(),
+      axis.title.x = element_text(size = 14),
+      legend.position = "top",
+      legend.title = element_text(size = 12),
+      legend.text = element_text(size = 12)
+    )
+}
+
+result_all <- process_data_all(df, 0.5, sppCategories, IUCN_classification)
+plot_all <- generate_plot_all(result_all$df_sum, show_species_labels = TRUE)
+
+# Define the number of chunks
+num_chunks <- 3 
+
+all_spp <- as.vector(unique(df$species))
+# Split the all_spp vector into multiple chunks
+chunked_spp <- split(all_spp, ceiling(seq_along(all_spp) / (length(all_spp) / num_chunks)))
+
+# Generate plots for each chunk
+plot_list <- lapply(chunked_spp, function(spp_chunk) {
+  # Filter the data for the current species chunk
+  df_chunk <- df[df$species %in% spp_chunk, ]
+  
+  # Process data for the current chunk
+  result_chunk <- process_data_all(df_chunk, 0.5, sppCategories, IUCN_classification)
+  
+  # Generate plot for the current chunk
+  generate_plot_all(result_chunk$df_sum, show_species_labels = TRUE)
+})
+
+# Access individual plots if needed
+plot_chunk1 <- plot_list[[1]]
+plot_chunk2 <- plot_list[[2]]
+plot_chunk3 <- plot_list[[3]]
+
 
 #EXPORT FIGURES 
 # Save the loser species combined plots as A4-sized output
@@ -255,5 +342,19 @@ ggsave("Figures/threatened_species_uncertainty_by_production_target_plots_A4.png
        width = 20, height = 12, units = "in", 
        bg = "white")
 
+#save all spp 
+ggsave("Figures/allsp_chunk1.png",
+       plot_chunk1,
+       width = 20, height = 12, units = "in", 
+       bg = "white")
 
+ggsave("Figures/allsp_chunk2.png",
+       plot_chunk2,
+       width = 20, height = 12, units = "in", 
+       bg = "white")
+
+ggsave("Figures/allsp_chunk3.png",
+       plot_chunk3,
+       width = 20, height = 12, units = "in", 
+       bg = "white")
 
