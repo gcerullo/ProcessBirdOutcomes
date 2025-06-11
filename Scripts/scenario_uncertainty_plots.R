@@ -330,6 +330,39 @@ plot_chunk3 <- plot_list[[3]]
 
 
 #EXPORT FIGURES 
+
+#PDF ####
+
+# Save the loser species combined plots as A4-sized output
+ggsave("Figures/loser_species_uncertainty_by_production_target_plots_A4.pdf",
+       combined_plot_losers_multiple_production_targets, 
+       width = 20, height = 11.69, units = "in", 
+       bg = "white")
+
+# Save the threatened species uncertainty by production target plots as A4-sized output with a white background
+ggsave("Figures/threatened_species_uncertainty_by_production_target_plots_A4.pdf",
+       combined_plot_threatened_multiple_production_targets,
+       width = 20, height = 12, units = "in", 
+       bg = "white")
+
+#save all spp 
+ggsave("Figures/allsp_chunk1.pdf",
+       plot_chunk1,
+       width = 20, height = 12, units = "in", 
+       bg = "white")
+
+ggsave("Figures/allsp_chunk2.pdf",
+       plot_chunk2,
+       width = 20, height = 12, units = "in", 
+       bg = "white")
+
+ggsave("Figures/allsp_chunk3.pdf",
+       plot_chunk3,
+       width = 20, height = 12, units = "in", 
+       bg = "white")
+
+#PNG ####
+
 # Save the loser species combined plots as A4-sized output
 ggsave("Figures/loser_species_uncertainty_by_production_target_plots_A4.png",
        combined_plot_losers_multiple_production_targets, 
