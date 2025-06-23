@@ -1,5 +1,3 @@
-
-# 21.02.2023 
 #This code: 
 #1 Brings together all raw site-level point count data from forest and plantation sites coordinated by Cerullo in 2022 
 #and carried out by Daniel Kong into one tidy dataframe, then... 
@@ -880,28 +878,30 @@ zenodo <- read.csv("Outputs/allDanielDaveSimonDetectionsWithLidar.csv") %>%
   select(spp, abundance,habitat, site, point, day, year, flyover,distance,adjacent, adjacent_hab,h.s.hs, date, time, date_time, longitude, latitude, sampler, logging_year, restoration_year, time_since_logging, time_since_restoration,plantation_age, abc50, abc100, cth50,cth100) %>%  
   unique()
 
-library(summarytools)
-dfSummary(zenodo)
+#Zenodo export
 
-
-traits <- read.csv("Outputs/AllBorneoSpeciesTraits.csv") %>%  
-  select(spp, LatinName, Family1, Order1, Trophic.Level, Primary.Lifestyle) %>%  
-  rename_with(~ str_to_lower(.))  %>% 
-  unique() %>%  
-  filter(latinname != "Psilopogon duvaucelii") #remove species name duplication, 
-
-zenodo <- zenodo %>% left_join(traits) %>% unique()
-sum(zenodo$abundance)
-unique(zenodo$spp)
-
-#exctract traits for Julia
-traits_for_julia <- read.csv("Outputs/AllBorneoSpeciesTraits.csv") %>%  
-  #select(spp, LatinName, Family1, Order1, Trophic.Level, Primary.Lifestyle) %>%  
-  rename_with(~ str_to_lower(.))  %>% 
-  unique() %>%  
-  filter(latinname != "Psilopogon duvaucelii") #remove species name duplication, 
-
-#export 
-zenodo %>% select(site, habitat,point) %>% unique() %>% group_by(habitat) %>% count()
-write.csv(zenodo, "zenodo/zenodo_2008_20222_bird_data_sabah_GC.csv")
+# library(summarytools)
+# dfSummary(zenodo)
+# 
+# 
+# traits <- read.csv("Outputs/AllBorneoSpeciesTraits.csv") %>%  
+#   select(spp, LatinName, Family1, Order1, Trophic.Level, Primary.Lifestyle) %>%  
+#   rename_with(~ str_to_lower(.))  %>% 
+#   unique() %>%  
+#   filter(latinname != "Psilopogon duvaucelii") #remove species name duplication, 
+# 
+# zenodo <- zenodo %>% left_join(traits) %>% unique()
+# sum(zenodo$abundance)
+# unique(zenodo$spp)
+# 
+# #exctract traits for Julia
+# traits_for_julia <- read.csv("Outputs/AllBorneoSpeciesTraits.csv") %>%  
+#   #select(spp, LatinName, Family1, Order1, Trophic.Level, Primary.Lifestyle) %>%  
+#   rename_with(~ str_to_lower(.))  %>% 
+#   unique() %>%  
+#   filter(latinname != "Psilopogon duvaucelii") #remove species name duplication, 
+# 
+# #export 
+# zenodo %>% select(site, habitat,point) %>% unique() %>% group_by(habitat) %>% count()
+# write.csv(zenodo, "zenodo/zenodo_2008_20222_bird_data_sabah_GC.csv")
 

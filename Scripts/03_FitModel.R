@@ -115,8 +115,5 @@ fit <- flock(f_occ = ~ 0 + # don't fit intercept (as -1:1 coded)
 )
 
 # save ----
-# note: this failed on first run because two chains stopped running due to 
-# memory overflow (due to other processes on machine). Currently rebuild the 
-# object from the two completed chains
 saveRDS(fit, "../../Rainforest Builder Dropbox/Simon Mills/Gian/fit_backup.rds")
 summary(fit)
