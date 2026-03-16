@@ -2,7 +2,7 @@
 
 
 # packages
-library(flocker); library(brms); library(dplyr); library(ggplot2)
+library(flocker); library(brms); library(tidyverse); library(ggplot2)
 
 fit <- readRDS("outputs/fit_2024-07-12.rds")
 fd <- readRDS('outputs/fd_2024-07-12.rds')
@@ -18,6 +18,7 @@ plantation_age[plantation_age == -99] <- NA
 plantation_age_sc <- scale(plantation_age)
 plantation_age_sc[is.na(plantation_age_sc)] <- 0
 all(plantation_age_sc - fd_data$plantation_age_sc == 0)
+
 
 # time since logging
 time_since_logging <- fd_data$time_since_logging
@@ -88,6 +89,12 @@ pred_primary <- pred_data %>%
     mutate(time_since_logging = NA, time_since_logging_sc = 0, 
            plantation_age = NA, plantation_age_sc = 0)
 
+pred_wt <- pred_data %>%
+  filter(habitat == 'Primary') %>%
+  mutate(time_since_logging = NA, time_since_logging_sc = 0, 
+         plantation_age = NA, plantation_age_sc = 0)
+
+
 preds_primary <- fitted_flocker(fit, components = "occ", new_data = pred_primary, 
                                 draw_ids = seq(1, 4000, 8))
 
@@ -104,7 +111,8 @@ preds_primary_out_summ <- tibble(mid = matrixStats::rowMeans2(preds_primary$linp
 # Knock these 5 categories (above) out of the prediction dataframe and then 
 # add the dataframes with the range of ages/time since logging back in
 pred_data_full <- pred_data %>%
-    filter(!(habitat %in% c("Eucalyptus_pellita", "Albizia_falcataria", 
+  #remove these as these habs hve time-varying intercepts
+    filter(!(habitat %in% c("Eucalyptus_pellita", "Albizia_falcataria",
                             "Once_logged", "Restored"))) %>%
     mutate(time_since_logging = NA, time_since_logging_sc = 0, 
            plantation_age = NA, plantation_age_sc = 0) %>%
@@ -112,6 +120,7 @@ pred_data_full <- pred_data %>%
     bind_rows(., pred_plantation_age) %>% 
     bind_rows(pred_primary) %>%
     select(-id)
+unique(pred_data_full$habitat)
 
 # generate predictions ----
 preds <- fitted_flocker(fit, components = "occ", new_data = pred_data_full, 
@@ -131,6 +140,9 @@ out_summ <- tibble(mid = matrixStats::rowMeans2(preds$linpred_occ),
                    upr = matrixStats::rowQuantiles(preds$linpred_occ, probs = .9)) %>%
     bind_cols(pdat_red, .)
 
+unique(out_summ$habitat)
+
+#for the habitats with time varying intercepts 
 out_summ2 <- replicate(4, preds_primary_out_summ, FALSE) %>%
     bind_rows(.id='id') %>%
     mutate(time_since_logging = 0, 
@@ -149,10 +161,11 @@ out_summ2 <- replicate(4, preds_primary_out_summ, FALSE) %>%
 plantation_pred_df <- out_summ2  %>%
     filter(habitat %in% c("Eucalyptus pellita", "Albizia falcataria"))
 
+unique(out_summ2$habitat)
 logging_pred_df <- out_summ2  %>%
     filter(habitat %in% c("Once logged", "Restored")) 
 
-plantation_pred_df %>%  
+plantation_fig <- plantation_pred_df %>%  
     filter(plantation_age >= 0) %>%
     ggplot(aes(plantation_age, mid, group=species)) +
     geom_line(alpha=.5, col='grey0') +
@@ -172,25 +185,76 @@ plantation_pred_df %>%
                        labels = c('Primary', 0, 5, 10))
 ggsave("figures/plantation_age_estimates.png", units="mm", height=150, width=230)
 
-logging_pred_df %>%  
-    filter(time_since_logging >= 19) %>%
-    ggplot(aes(time_since_logging, mid, group=species)) +
-    geom_line(alpha=.5, col='grey0') +
-    geom_point(data = logging_pred_df %>% filter(time_since_logging < 14), 
-               alpha=.5, col='grey0') +
-    geom_line(data = logging_pred_df %>% filter(time_since_logging <= 19), 
-              lty = 'longdash', 
-              alpha=.5, col='grey0') +
-    facet_grid(habitat~dependency_label) +
-    theme_bw() +
-    theme(strip.text = element_text(hjust=0, face="bold"), 
-          strip.background = element_blank(), 
-          axis.text = element_text(colour="black"), 
-          panel.grid = element_blank()) +
-    labs(y = "P(occupancy)", x = "Time since logging") +
-    scale_x_continuous(breaks = c(0, 20, 40, 60), 
-                       labels = c('Primary', 20, 40, 60))
-ggsave("figures/time_since_logging_estimates.png", units="mm", height=150, width=230)
+unique(logging_pred_df$habitat)
+
+
+twice_log_seq <- seq(10, 60)
+
+# Primary baseline points
+primary_points <- logging_pred_df %>%
+  filter(time_since_logging < 14) %>%
+  select(species, dependency_label, mid) %>%
+  distinct() %>%
+  mutate(
+    habitat = "Twice logged",
+    time_since_logging = 0
+  )
+
+# Twice-logged trajectories
+twice_logged <- out_summ %>% 
+  filter(habitat == "Twice_logged") %>%  
+  select(species, dependency, mid) %>%  
+  mutate(
+    habitat = "Twice logged",
+    dependency_label = str_to_title(dependency),
+    mid = as.numeric(mid)
+  ) %>%
+  select(species, dependency_label, mid, habitat) %>%
+  crossing(time_since_logging = twice_log_seq)
+
+# Combine primary anchor + trajectories
+twice_logged_full <- bind_rows(primary_points, twice_logged)
+
+# Combine with original prediction dataframe
+plot_df <- bind_rows(logging_pred_df, twice_logged_full) %>%
+  mutate(time_since_logging = as.numeric(time_since_logging)) %>%  
+  filter(dependency_label != "None") %>%  
+  mutate(dependency_label = factor(dependency_label, levels = c("High", "Medium", "Low")))
+  
+
+logging_fig <- plot_df %>%  
+  filter(time_since_logging >= 19 | habitat == "Twice logged") %>%
+  ggplot(aes(time_since_logging, mid, group = species)) +
+  geom_line(alpha = .5, col = 'grey0') +
+  #geom_point(data = plot_df %>% filter(time_since_logging < 14), 
+  #           alpha = .5, col = 'grey0') +
+  geom_point(
+    data = plot_df %>%
+      filter(
+        (habitat != "Twice logged" & time_since_logging < 14) |
+          (habitat == "Twice logged" & time_since_logging == 0)
+      ),
+    alpha = .5,
+    col = "grey0"
+  )+
+  geom_line(data = plot_df %>% filter(time_since_logging <= 19), 
+            lty = 'longdash', alpha = .3, col = 'grey0') +
+  facet_grid(habitat ~ dependency_label) +
+  theme_bw() +
+  theme(strip.text = element_text(hjust = 0, face = "bold"),
+        strip.background = element_blank(),
+        axis.text = element_text(colour = "black"),
+        panel.grid = element_blank()) +
+  labs(y = "P(occupancy)", x = "Time since logging") +
+  # scale_x_continuous( breaks = c(0,20,40,60),
+  #                    labels = c("Primary",20,40,60))
+  scale_x_continuous( limits =c(0,45),
+                      breaks = c(0,10,20,30, 40),
+                      labels = c("Primary",10,20,30, 40))
+
+
+all_bird_curves <- cowplot::plot_grid(logging_fig, plantation_fig, ncol = 1, rel_heights = c(1.2, 0.8))
+ggsave("figures/all_birs_curves.png", all_bird_curves, units="mm", height=297, width=210)
     
 # out_summ %>%
 #     mutate(dependency_label = case_when(dependency == "none" ~ "low", 
