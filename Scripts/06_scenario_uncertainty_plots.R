@@ -16,9 +16,9 @@ library(stringr)
 rds_folder <- "Outputs/BestScenarioUncertainty"
 rds_files <- list.files(rds_folder, pattern = "*.rds", full.names = TRUE)
 
-sppCategories <- readRDS("Outputs/DBsppCategories.rds") 
+sppCategories <- readRDS("Outputs/sppCategories.rds") 
 
-#select which starting landscape and scenario ruls you want
+#select which starting landscape and scenario rules you want
 rds_files
 df <- readRDS(rds_files[[1]])
 
@@ -63,7 +63,7 @@ int1L_spp  <- df_sum %>% ungroup %>% filter(spp_category == "intermediate1L") %>
 all_spp  <- df_sum %>% ungroup %>%   select(species) %>%  unique() %>%  
   pull()
 
-#quick summaries - which species are generally better with plantations 
+#quick summaries - which species are generally better with plantation scenarios  
 sp_prefer_plantation_dominated_production <- df_sum %>% filter(treatment_strategy =="plantation" & percentage>0.5) 
 
 #plot function ####
@@ -115,8 +115,8 @@ generate_uncertainty_plot <- function(df_sum, species_group, treatment_order = c
 }
 
 
-loser_dungbeetle_uncertainty_plot <- generate_uncertainty_plot(df_sum, loser_spp)
-int1_dungbeetle_uncertainty_plot <- generate_uncertainty_plot(df_sum, int1L_spp)
+loser_bird_uncertainty_plot <- generate_uncertainty_plot(df_sum, loser_spp)
+int1_bird_uncertainty_plot <- generate_uncertainty_plot(df_sum, int1L_spp)
 all_sp_uncertainty_plot <-  generate_uncertainty_plot(df_sum, all_spp)
 # Define the number of chunks you want to split all spp into (e.g., 3)
 num_chunks <- 2
