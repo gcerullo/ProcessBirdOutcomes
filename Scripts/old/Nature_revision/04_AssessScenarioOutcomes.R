@@ -1,10 +1,17 @@
+# =============================================================================
+# Self-notes — Nature_revision copy of scenario assessment
+# =============================================================================
+# What I'm doing: I'm keeping an alternate `Nature_revision/` version of scenario assessment (includes
+#   extras like plateau vs no-plateau workflows in places); I use it when I’m comparing to NR2.
+#
+# What I need (inputs): Same family as `Scripts/04_AssessScenarioOutcomes.R`—`ScenarioParams`, draws,
+#   scenario CSVs—paths are in the body.
+#
+# What I produce (outputs): Same kinds of RDS/summaries as the main assess script, under whatever
+#   `Outputs/` paths this file still points to.
+# =============================================================================
+
 #GC 11/06/24
-#Assess the bird outcomes of different scenarios, where each scenario is disaggregated by age
-
-
-#This code:
-#1. Uses model outputs from Bayesian spp occ to summarise spp categories 
-#2. To propagate through bird outcomes for each spp.
 
 library(tidyverse)
 library(ggplot2)

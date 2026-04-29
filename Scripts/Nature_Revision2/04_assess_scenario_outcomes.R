@@ -1,10 +1,40 @@
+# =============================================================================
+# Self-notes — NR2 bird pipeline
+# =============================================================================
+# What I'm doing: I'm propagating predicted occupancy through landscape scenarios—starting-landscape
+#   and scenario cumulative occupancy over time, species categories, relative occupancy vs all-primary,
+#   delta abundance with uncertainty, and RDS for downstream summaries and best-scenario uncertainty.
+#
+# What I need (inputs): `Inputs/ScenarioParams.R`, predicted draws RDS, scenario CSVs, and I write/read
+#   intermediates under `Outputs/NR2/rds` (see body for canonical names).
+#
+# What I produce (outputs): Processed birds, SL/scenario occ RDS, `Rel_Occ_PerIteration/OGbaseline_*.rds`,
+#   `BestScenarioUncertainty/`, `OG_baseline_birds.rds`, IUCN and species-level RDS, etc.
+# =============================================================================
+
 #GC 11/06/24
-#Assess the bird outcomes of different scenarios, where each scenario is disaggregated by age
 
+source("Scripts/Nature_Revision_2/00_config.R")
+nr2_paths <- nr2_init(".", verbose = FALSE)
+nr2_rds_dir <- nr2_paths$rds_dir
+sl_occ_dir <- file.path(nr2_rds_dir, "SLoccOutputs")
+scenario_occ_dir <- file.path(nr2_rds_dir, "occ60PerScenarioIteration")
+rel_occ_dir <- file.path(nr2_rds_dir, "Rel_Occ_PerIteration")
+best_scenario_dir <- file.path(nr2_rds_dir, "BestScenarioUncertainty")
 
-#This code:
-#1. Uses model outputs from Bayesian spp occ to summarise spp categories 
-#2. To propagate through bird outcomes for each spp.
+# Canonical NR2 file names for this script (no date suffixes)
+processed_birds_file <- file.path(nr2_rds_dir, "processedOccBirds.rds")
+spp_categories_file <- file.path(nr2_rds_dir, "sppCategories.rds")
+predicted_draws_file <- file.path(nr2_rds_dir, "predicted_occupancy_500_draws.rds")
+sl_occ_file <- file.path(sl_occ_dir, "SL_occ60yr_perIteration.rds")
+final_output_file <- file.path(nr2_rds_dir, "OG_baseline_birds.rds")
+final_iucn_output_file <- file.path(nr2_rds_dir, "OG_baseline_birdsIUCN.rds")
+species_level_output_file <- file.path(nr2_rds_dir, "species_level_relative_occ.rds")
+
+dir.create(sl_occ_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(scenario_occ_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(rel_occ_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(best_scenario_dir, recursive = TRUE, showWarnings = FALSE)
 
 library(tidyverse)
 library(ggplot2)
@@ -22,6 +52,9 @@ library(bayestestR)
 
 #read in the scenario parametres containing conversion factors for converting from point to parcel/entire landscape  
 source("Inputs/ScenarioParams.R")
+if (!exists("all_start_landscape") || !exists("bird_CF") || !exists("total_bird_pts")) {
+  stop("Missing required objects from Inputs/ScenarioParams.R: all_start_landscape, bird_CF, total_bird_pts")
+}
 
 #this allows table joins to be 100 million rows (instead of 50,000,000 )
 options(datatable.cautious = 100e6)
@@ -45,8 +78,10 @@ csv_folder <- "Inputs/ScenariosWithDelaysCSVs"
 csv_files <- list.files(csv_folder, pattern = "*.csv", full.names = TRUE)
 
 #----read in properly thinned occ500draws for each bird 
-birds <- readRDS("Inputs/occ500drawsSept24.rds")
-
+if (!file.exists(predicted_draws_file)) {
+  stop("Missing required NR2 input file: Outputs/NR2/rds/predicted_occupancy_500_draws.rds")
+}
+birds <- readRDS(predicted_draws_file)
 #----read in Bird IUCN information 
 IUCN_classification <- read.csv("Inputs/AllBorneoSpeciesTraits.csv") %>% 
   select(spp, redlistCategory) %>% unique() %>% as.data.table() %>%  
@@ -198,10 +233,10 @@ processed_birds <- process_birds_data(birds_raw)
 processed_birds <- as.data.table(processed_birds)
 
 #---- save processed birds ----
-saveRDS(processed_birds, "Outputs/processedOccBirdsSept24.rds")
+saveRDS(processed_birds, processed_birds_file)
 
 #----can start HERE ----
-processed_birds <- readRDS("Outputs/processedOccBirdsSept24.rds")
+processed_birds <- readRDS(processed_birds_file)
 
 #remove improved improved yields
 processed_birds <- as.data.table(processed_birds)
@@ -254,7 +289,7 @@ winners <- birds %>%
 
 #spp categories 
 sppCategories <- rbind(losers,intermediates1L,intermediates2L,winners) %>% ungroup
-saveRDS(sppCategories,"Outputs/sppCategoriesSept24.rds")
+saveRDS(sppCategories, spp_categories_file)
 
 
 # #=============  CALCULATE starting LANDSCAPE OCCUPANCY THRU TIME UNCERTAINTY ===========
@@ -306,7 +341,7 @@ execute_SL_fun <-function(zeta) {
 #do this to calculate occ_60yr for each species, scenarioStart, and posterior draw iteration 
 result_list_SL <- lapply(1:nrow(combinations_SL), execute_SL_fun) 
 
-saveRDS(result_list_SL,"Outputs/SLoccOutputs/SL_occ60yr_perIterationSept24.rds")
+saveRDS(result_list_SL, sl_occ_file)
 
 # ---- Calculate the SCENARIO OCCUPANCY THRU TIME UNCERTAINTY ------
 
@@ -354,7 +389,7 @@ delayFilters <- c("delay 0", "delay 29")
 harvest_window <-  length(delayFilters)##how many harvest delays?
 
 #set a folder for saving outputs, showing for each species and scenario and iteration, occ_60 for lanscape
-rds_folder <- "Outputs/occ60PerScenarioIterationJan25"
+rds_folder <- scenario_occ_dir
 
 for (k in seq_along(csv_files)){
   
@@ -453,17 +488,20 @@ result_list
 
 #-----------------calculate rel occ for each  iteration and species category ----
 cap <- 1.5 # don't allow scenario occ to be more than 1.5 starting landscape occ [only used if calculating geometric mean]
-sppCategories <- readRDS("Outputs/sppCategoriesSept24.rds")
+sppCategories <- readRDS(spp_categories_file)
 sppCategories<- as.data.table(sppCategories)
 
 #where data on occ_60yr of scenarios is stored 
-rds_folder <- "Outputs/occ60PerScenarioIterationJan25"
+rds_folder <- scenario_occ_dir
 occ60_files <- list.files(rds_folder, pattern = "*.rds", full.names = TRUE)
 
 #occ60_files <- occ60_files[2:3]
 
 #SL_60yrOcc 
-SL_occ60 <- readRDS("Outputs/SLoccOutputs/SL_occ60yr_perIterationSept24.rds") 
+if (!file.exists(sl_occ_file)) {
+  stop("Missing required SL file: Outputs/NR2/rds/SLoccOutputs/SL_occ60yr_perIteration.rds")
+}
+SL_occ60 <- readRDS(sl_occ_file)
 SL_occ60_dt <- rbindlist(SL_occ60) %>%
   rename(SL_occ_60yr = occ_60yr)
 
@@ -472,7 +510,7 @@ SL_all_primary_dt<- SL_occ60_dt %>% filter(scenarioStart == "all_primary")
 rm(SL_occ60_dt)
 
 #allocate folder to hold raw relative occupancy values, for further apraisal 
-raw_rel_occ_folder <- "Outputs/Rel_Occ_PerIterationSept24"
+raw_rel_occ_folder <- rel_occ_dir
 
 for (w in seq_along(occ60_files)){
   occ60 <- readRDS(occ60_files[[w]])
@@ -502,20 +540,38 @@ for (w in seq_along(occ60_files)){
   # #calculate rel_occ; if rel_occ is > cap, replace with cap, to ensure scenario landscape cannot be more than 1.5 of starting landscape
     occ_comb[, rel_occ := pmin((occ_60yr / SL_occ_60yr), cap)]
 
+  # -------------------------------------------------------------------------- #
+  # NR2 — DELTA_ABUNDANCE (same RDS as rel_occ; additive, not a ratio)         #
+  # -------------------------------------------------------------------------- #
+  # Per draw: delta_abundance = occ_60yr − SL_occ_60yr (all-primary baseline,
+  # same pairing as denominator for rel_occ). Summarised by species × index ×
+  # production_target with median/mean and central posterior intervals: 95%
+  # (q025–q975) and 80% (q10–q90). Written with relative occupancy columns in
+  # one table: OGbaseline_<...>.rds under Rel_Occ_PerIteration.
+  # -------------------------------------------------------------------------- #
+  occ_comb[, delta_abundance := occ_60yr - SL_occ_60yr]
+
   #export raw relative occupancy values 
   #saveRDS(occ_comb, file = "relOcc_file_path")
   
   #add in species categories 
   occ_comb <- sppCategories[occ_comb, on = "species"]
 
-  #summarise species-level median rel occ across 500 iterations 
- 
-  rel_occ <- occ_comb %>%  group_by(species, index, production_target) %>%  
+  # Species-level summary: relative occupancy (ratio) and delta abundance (additive), same groups
+  rel_occ <- occ_comb %>%
+    group_by(species, index, production_target) %>%
     summarize(
       medianRelativeOccupancy = median(rel_occ, na.rm = TRUE),
       meanRelativeOccupancy = mean(rel_occ, na.rm = TRUE),
       p1_medianRelativeOccupancy = quantile(rel_occ, 0.1, na.rm = TRUE),
-      p9_medianRelativeOccupancy = quantile(rel_occ, 0.9, na.rm = TRUE)
+      p9_medianRelativeOccupancy = quantile(rel_occ, 0.9, na.rm = TRUE),
+      median_delta_abundance = median(delta_abundance, na.rm = TRUE),
+      mean_delta_abundance = mean(delta_abundance, na.rm = TRUE),
+      q025_delta_abundance = quantile(delta_abundance, 0.025, na.rm = TRUE),
+      q975_delta_abundance = quantile(delta_abundance, 0.975, na.rm = TRUE),
+      q10_delta_abundance = quantile(delta_abundance, 0.10, na.rm = TRUE),
+      q90_delta_abundance = quantile(delta_abundance, 0.90, na.rm = TRUE),
+      .groups = "drop"
     )
   
   # #summarise posterior draws directly over the sp grp (ie over losers, winners etc.)
@@ -535,7 +591,7 @@ for (w in seq_along(occ60_files)){
 ##################################################
 #FOR UNCERTAINTY -calculate proportion of scenarios where logging is better than plantations
 #set folder for storing best scenario (logging or plantation) for each production target
-best_scenario_folder <- "Outputs/BestScenarioUncertainty"
+best_scenario_folder <- best_scenario_dir
 
 #how often are plantation scenarios better than logging scenarios 
 logging_or_plantation_scenarios <- scenario_composition %>%  
@@ -589,6 +645,24 @@ PairedExample <- occ_comb %>% filter(species == "Helmeted Hornbill" & iteration 
 #----- summarise relative abundance across groups of species for which have median relative occupancy  -----
 
 #summarised across data that has already been medianed per spp from 500 draws
+rel_occ_files <- list.files(raw_rel_occ_folder, pattern = "\\.rds$", full.names = TRUE)
+if (length(rel_occ_files) == 0) {
+  stop("No rel_occ files found in Outputs/NR2/rds/Rel_Occ_PerIteration; cannot build rel_occ_df")
+}
+
+rel_occ_df <- rel_occ_files %>%
+  lapply(readRDS) %>%
+  bind_rows() %>%
+  as.data.table()
+
+required_rel_occ_cols <- c("species", "index", "production_target", "medianRelativeOccupancy")
+missing_rel_occ_cols <- setdiff(required_rel_occ_cols, names(rel_occ_df))
+if (length(missing_rel_occ_cols) > 0) {
+  stop(
+    "rel_occ_df is missing required columns: ",
+    paste(missing_rel_occ_cols, collapse = ", ")
+  )
+}
 
 
 #for species groupings (winner, loser, intermediate)
@@ -610,6 +684,7 @@ summarise_across_posterior_fun <- function(x){
 final_relOcc <- summarise_across_posterior_fun(rel_occ_df)
 
 #add back in key information 
+
 final_relOcc <- final_relOcc %>% ungroup() %>%   left_join(scenario_composition, by = c("index", "production_target"))# %>% 
 
 #for IUCN near threatened species 
@@ -649,11 +724,11 @@ outputIUCN <- final_IUCN %>% select(index, production_target, scenarioName,scena
                                     threatened) %>% cbind(outcome = "birds")
 
 #outputs when using fully primary baseline and when calculating median across species groupings for main figures
-saveRDS(output, "FinalPerformanceOutput/OG_baseline_birdsSept24.rds")
-saveRDS(outputIUCN, "FinalPerformanceOutput/OG_baseline_birdsIUCNSept24.rds")
+saveRDS(output, final_output_file)
+saveRDS(outputIUCN, final_iucn_output_file)
 
 #output when instead calculating median and CI relative abundance on a per-species basis; this
 #reliably shows error on a per-species basis.
 
-saveRDS(rel_occ_df, "FinalPerformanceOutput/species_level_relative_occ.rds")
+saveRDS(rel_occ_df, species_level_output_file)
 

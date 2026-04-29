@@ -1,11 +1,26 @@
+# =============================================================================
+# Self-notes — NR2 bird pipeline
+# =============================================================================
+# What I'm doing: I'm fitting my multi-species occupancy model in flocker/brms (cmdstanr), with the
+#   priors and formula I settled on for habitat × forest-dependency and detection structure.
+#
+# What I need (inputs): `Outputs/NR2/models/fd_28-05-24.rds` (flocker data object).
+#
+# What I produce (outputs): `Outputs/NR2/models/fit.rds` (brms fit), CmdStan files under the same
+#   models folder, and `Outputs/NR2/models/fit_backup.rds`.
+# =============================================================================
+
 #fit model 
 #this code sets the model structure for the full multi-species Bayesian occupancy models
+
+source("Scripts/Nature_Revision_2/00_config.R")
+nr2_paths <- nr2_init(".", verbose = FALSE)
 
 library(brms); library(flocker); library(dplyr)
 # devtools::install_github("jsocolar/flocker")
 # cmdstan path
 # C:/Users/smills2/.cmdstan/cmdstan-2.32.2
-fd <- readRDS("Outputs/fd_28-05-24.rds")
+fd <- readRDS(file.path(nr2_paths$models_dir, "fd_28-05-24.rds"))
 
 prior_specification <- c(
   # intercept terms (i.e. average species )
@@ -108,12 +123,12 @@ fit <- flock(f_occ = ~ 0 + # don't fit intercept (as -1:1 coded)
              sample_prior = "yes",
              save_warmup = TRUE,
              chains = 4, cores = 4,
-             file = "../../Rainforest Builder Dropbox/Simon Mills/Gian/fit.rds",
-             output_dir = "../../Rainforest Builder Dropbox/Simon Mills/Gian/",
+             file = file.path(nr2_paths$models_dir, "fit.rds"),
+             output_dir = nr2_paths$models_dir,
              output_basename = "Borneo_v4",
              backend = "cmdstanr"
 )
 
 # save ----
-saveRDS(fit, "../../Rainforest Builder Dropbox/Simon Mills/Gian/fit_backup.rds")
+saveRDS(fit, file.path(nr2_paths$models_dir, "fit_backup.rds"))
 summary(fit)

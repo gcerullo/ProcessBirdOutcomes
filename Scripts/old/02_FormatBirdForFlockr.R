@@ -1,3 +1,12 @@
+# =============================================================================
+# Self-notes — bird flocker prep (legacy `Outputs/` layout)
+# =============================================================================
+# What I'm doing: I'm reshaping `birdDataForFlockr.csv` into flocker data objects for fitting.
+#
+# What I need (inputs): `Outputs/birdDataForFlockr.csv` from my combine script.
+#
+# What I produce (outputs): `Outputs/fd_28-05-24.rds` and `Outputs/fd_no_visit_cov_28-05-24.rds`.
+# =============================================================================
 
 # Clean and format data for passing to flocker
 rm(list = ls())

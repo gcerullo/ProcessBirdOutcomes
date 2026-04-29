@@ -1,13 +1,14 @@
-#This code: 
-#1 Brings together all raw site-level point count data from forest and plantation sites coordinated by Cerullo in 2022 
-#and carried out by Daniel Kong into one tidy dataframe, then... 
-#2. Combines this with historic forest PC data collected by David Edwards and then
-#3. comines with Simon Mitchells logged and old-growth forest data.
-
-#these data are then joined with a LiDAR above-ground carbon and tree canopy height information from each point 
-#LiDAR data are calculated for 50m and 100m buffers around each point in Google Earth Engine. 
-
-#THere is a commented out section of code that also extract trait data for all species based on the AVONET portal 
+# =============================================================================
+# Self-notes — bird data combine (legacy `Outputs/` layout)
+# =============================================================================
+# What I'm doing: Same merge as my NR2 combine script—I'm assembling Borneo point counts + LiDAR—but I
+#   write to `Outputs/` here instead of `Outputs/NR2/rds/`.
+#
+# What I need (inputs): `RawData/` CSVs, `Inputs/SimonDaveSpeciesNamesCrossWalk.csv`, LiDAR tables, etc.
+#
+# What I produce (outputs): `Outputs/allDanielDaveSimonDetectionsWithLidar.csv` and
+#   `Outputs/birdDataForFlockr.csv`.
+# =============================================================================
 
 rm(list = ls())
 

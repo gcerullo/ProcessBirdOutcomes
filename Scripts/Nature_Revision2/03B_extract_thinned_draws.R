@@ -1,11 +1,45 @@
+# =============================================================================
+# Self-notes — NR2 bird pipeline
+# =============================================================================
+# What I'm doing: I'm taking posterior draws from my fitted model and generating predicted occupancy
+#   across habitats and ages (thinned draws for downstream landscape work), plus a quick diagnostic figure.
+#
+# What I need (inputs): `Outputs/NR2/models/fit.rds` or `fit_backup.rds`, and matching `fd_*.rds`
+#   (with fallbacks to older `outputs/` paths if I left them there).
+#
+# What I produce (outputs): `Outputs/NR2/rds/predicted_occupancy_500_draws.rds`,
+#   `predicted_occupancy_500_draws_summarised.rds`, and `Outputs/NR2/figures/all_birs_curves.png`.
+# =============================================================================
+
 # generate predicted occupancy for 500 thinned draws for model propagating
 
+source("Scripts/Nature_Revision_2/00_config.R")
+nr2_paths <- nr2_init(".", verbose = FALSE)
 
 # packages
 library(flocker); library(brms); library(tidyverse); library(ggplot2)
 
-fit <- readRDS("outputs/fit_2024-07-12.rds")
-fd <- readRDS('outputs/fd_2024-07-12.rds')
+first_existing_path <- function(paths) {
+  existing <- paths[file.exists(paths)]
+  if (length(existing) == 0) {
+    stop("None of the expected input files exist: ", paste(paths, collapse = ", "))
+  }
+  existing[[1]]
+}
+
+fit_path <- first_existing_path(c(
+  file.path(nr2_paths$models_dir, "fit.rds"),
+  file.path(nr2_paths$models_dir, "fit_backup.rds"),
+  "outputs/fit_2024-07-12.rds"
+))
+
+fd_path <- first_existing_path(c(
+  file.path(nr2_paths$models_dir, "fd_28-05-24.rds"),
+  "outputs/fd_2024-07-12.rds"
+))
+
+fit <- readRDS(fit_path)
+fd <- readRDS(fd_path)
 
 # get fd data
 fd_data <- fd$data[1:fd$data$ff_n_unit[1],]
@@ -183,7 +217,7 @@ plantation_fig <- plantation_pred_df %>%
     labs(y = "P(occupancy)", x = "Plantation age") +
     scale_x_continuous(breaks = c(-5, 0, 5, 10), 
                        labels = c('Primary', 0, 5, 10))
-ggsave("figures/plantation_age_estimates.png", units="mm", height=150, width=230)
+ggsave(file.path(nr2_paths$figures_dir, "plantation_age_estimates.png"), units="mm", height=150, width=230)
 
 unique(logging_pred_df$habitat)
 
@@ -225,7 +259,15 @@ plot_df <- bind_rows(logging_pred_df, twice_logged_full) %>%
 logging_fig <- plot_df %>%  
   filter(time_since_logging >= 19 | habitat == "Twice logged") %>%
   ggplot(aes(time_since_logging, mid, group = species)) +
-  geom_line(alpha = .5, col = 'grey0') +
+  geom_line(
+    data = plot_df %>%
+      filter(
+        (habitat != "Twice logged" & time_since_logging > 19) |
+          (habitat == "Twice logged" & time_since_logging > 10)
+      ),
+    alpha = .5,
+    col = 'grey0'
+  ) +
   #geom_point(data = plot_df %>% filter(time_since_logging < 14), 
   #           alpha = .5, col = 'grey0') +
   geom_point(
@@ -237,7 +279,10 @@ logging_fig <- plot_df %>%
     alpha = .5,
     col = "grey0"
   )+
-  geom_line(data = plot_df %>% filter(time_since_logging <= 19), 
+  geom_line(data = plot_df %>% filter(
+    (habitat != "Twice logged" & time_since_logging <= 19) |
+      (habitat == "Twice logged" & time_since_logging <= 10)
+  ), 
             lty = 'longdash', alpha = .3, col = 'grey0') +
   facet_grid(habitat ~ dependency_label) +
   theme_bw() +
@@ -254,7 +299,7 @@ logging_fig <- plot_df %>%
 
 
 all_bird_curves <- cowplot::plot_grid(logging_fig, plantation_fig, ncol = 1, rel_heights = c(1.2, 0.8))
-ggsave("figures/all_birs_curves.png", all_bird_curves, units="mm", height=297, width=210)
+ggsave(file.path(nr2_paths$figures_dir, "all_birs_curves.png"), all_bird_curves, units="mm", height=297, width=210)
     
 # out_summ %>%
 #     mutate(dependency_label = case_when(dependency == "none" ~ "low", 
@@ -287,5 +332,5 @@ ggsave("figures/all_birs_curves.png", all_bird_curves, units="mm", height=297, w
 # ggsave("figures/time_since_logging_estimates.png", units="mm", height=150, width=230)
 
 # save outputs ----
-saveRDS(out, "outputs/predicted_occupancy_500_draws.rds")
-saveRDS(out_summ, "outputs/predicted_occupancy_500_draws_summarised.rds")
+saveRDS(out, file.path(nr2_paths$rds_dir, "predicted_occupancy_500_draws.rds"))
+saveRDS(out_summ, file.path(nr2_paths$rds_dir, "predicted_occupancy_500_draws_summarised.rds"))

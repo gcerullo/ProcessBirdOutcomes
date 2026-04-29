@@ -1,5 +1,15 @@
-#This script takes the key steps out of functions for the AsssessScenarioOutcomes.R script, so 
-#that we can see easily step-by-step the calculations we are doing and how these propagate error
+# =============================================================================
+# Self-notes — worked example of scenario error propagation
+# =============================================================================
+# What I'm doing: I'm stepping through pieces of `04_AssessScenarioOutcomes.R` with explicit objects and
+#   plots so I can see how uncertainty propagates species-by-species (not a full pipeline output).
+#
+# What I need (inputs): `Inputs/ScenarioParams.R`, `Outputs/processedOccBirdsSept24.rds` (and objects the
+#   script builds interactively).
+#
+# What I produce (outputs): Mostly on-screen / exploratory; I don't rely on this for batch RDS exports.
+# =============================================================================
+
 library(tidyverse)
 library(ggplot2)
 library(data.table)

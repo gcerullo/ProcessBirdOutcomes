@@ -1,9 +1,14 @@
-#Build figure of uncertainty for whether plantations or logging are better for each each species 
+# =============================================================================
+# Self-notes — best-scenario uncertainty plots (legacy `Outputs/` + `Figures/`)
+# =============================================================================
+# What I'm doing: Same idea as NR2 `05_scenario_uncertainty_plots.R`—logging vs plantation “wins”—but I
+#   read `Outputs/BestScenarioUncertainty/` and write PDF/PNG under `Figures/`.
+#
+# What I need (inputs): Best-scenario RDS from my assess script, `Outputs/sppCategories.rds`.
+#
+# What I produce (outputs): PDF and PNG uncertainty plots in `Figures/` (loser, intermediate, all-species).
+# =============================================================================
 
-#NOTES: 
-#This script reads in BestScenario Inputs from AssessScenarioOutcomes.R script. 
-#This, for each sp and production target, compared paired draws (ie iterations) and extracted whether 
-#the scenario with the highest relative occupancy was treatment_strategy or logging or plantation. 
 library(tidyverse)
 library(cowplot)
 library(data.table)
