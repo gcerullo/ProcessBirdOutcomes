@@ -295,146 +295,165 @@ ggsave(file.path(nr2_paths$figures_dir, "all_sp_chunk3.png"),
        bg = "white")
 
 # ##########################################
-# Doesnt seem to be much of an effect of production target on uncertainty
-# 
-# 
-# #For  loser species, plot uncertainty for multiple production targets
-# process_data <- function(df, production_threshold, sppCategories ) {
-#   df_filtered <- df %>% filter(production_target > production_threshold)
-# 
-#   if (nrow(df_filtered) == 0) {
-#     return(list(df_sum = tibble(), loser_spp = character(0)))
-#   }
-# 
-#   unique_combinations <- df_filtered %>%
-#     group_by(species) %>%
-#     count() %>%
-#     ungroup() %>%
-#     select(n) %>%
-#     unique() %>%
-#     pull()
-# 
-#   if (length(unique_combinations) == 0) {
-#     return(list(df_sum = tibble(), loser_spp = character(0)))
-#   }
-# 
-#   # Use a single denominator even if counts vary across species.
-#   combo_denom <- max(unique_combinations, na.rm = TRUE)
-# 
-#   df_sum <- df_filtered %>%
-#     unique() %>%
-#     group_by(species, treatment_strategy) %>%
-#     count() %>%
-#     mutate(percentage = n / combo_denom) %>%
-#     left_join(sppCategories, by = "species")
-#     #removed if unmarched in name of spp
-# 
-# 
-#   loser_spp <- df_sum %>%
-#     ungroup() %>%
-#     filter(spp_category == "loser") %>%
-#     select(species) %>%
-#     unique() %>%
-#     pull()
-# 
-#   list(df_sum = df_sum, loser_spp = loser_spp)
-# }
-# 
-# 
-# generate_plot <- function(df_sum, species_filter, show_species_labels = FALSE, show_legend = FALSE) {
-#   if (nrow(df_sum) == 0 || length(species_filter) == 0) {
-#     return(
-#       ggplot() +
-#         theme_void() +
-#         labs(title = "No species available for this threshold")
-#     )
-#   }
-# 
-#   df_sum %>%
-#     filter(species %in% species_filter) %>%
-#     group_by(species) %>%
-#     mutate(max_plantation = max(percentage[treatment_strategy == "plantation"])) %>%
-#     ungroup() %>%
-#     arrange(max_plantation) %>%
-#     mutate(species = factor(species, levels = unique(species))) %>%
-#     mutate(treatment_strategy = factor(treatment_strategy, levels = c("logging", "plantation"))) %>%
-#     ggplot(aes(x = species, y = percentage, fill = treatment_strategy)) +
-#     geom_bar(stat = "identity", width = 0.7, color = "black", size = 0.3) +
-#     geom_hline(yintercept = c(0.25, 0.5, 0.75), linetype = "dashed", color = "black", size = 0.7) +
-#     coord_flip() +
-#     scale_fill_manual(
-#       values = c("logging" = "#E69F00", "plantation" = "#56B4E9"),
-#       labels = c("Selective-logging Best", "Plantations Best")  # Legend labels
-# 
-#     ) +
-#     labs(
-#       x = NULL,
-#       y = "Proportion",
-#       fill = element_blank()
-#     ) +
-#     theme_minimal(base_size = 14) +
-#     theme(
-#       panel.grid.major.y = element_blank(),  # Remove horizontal grid lines
-#       panel.grid.minor = element_blank(),
-#       panel.grid.major.x = element_line(color = "gray80", size = 0.5),
-#       axis.text.y = if (show_species_labels) element_text(face = "italic", size = 9) else element_blank(),  # Conditional y-axis labels
-#       axis.title.x = element_text(size = 14),
-#       legend.position = if (show_legend) "top" else "none",
-#       legend.title = element_text(size = 12),
-#       legend.text = element_text(size = 12)
-#     )
-# }
-# 
-# 
-# # Process data for 0.25, 0.5, and 0.75 thresholds
-# resultalldata <- process_data(df, 0, sppCategories)
-# result025 <- process_data(df, 0.25, sppCategories)
-# result05 <- process_data(df, 0.5, sppCategories)
-# result075 <- process_data(df, 0.75, sppCategories)
-# 
-# # Generate plots for loser species #####
-# plotalldata_loser <- generate_plot(resultalldata$df_sum, resultalldata$loser_spp, show_species_labels = TRUE, show_legend = FALSE)
-# plot025_loser <- generate_plot(result025$df_sum, result025$loser_spp, show_species_labels = FALSE, show_legend = FALSE)
-# plot05_loser <- generate_plot(result05$df_sum, result05$loser_spp, show_species_labels = FALSE, show_legend = FALSE)
-# plot75_loser <- generate_plot(result075$df_sum, result075$loser_spp, show_species_labels = FALSE, show_legend = FALSE)
-# 
-# # Build one shared legend
-# legend_plot <- generate_plot(resultalldata$df_sum, resultalldata$loser_spp, show_species_labels = FALSE, show_legend = TRUE)
-# shared_legend <- cowplot::get_legend(legend_plot)
-# 
-# 
-# 
-# #combined figure losers ####
-# 
-# #combined figure losers ####
-# # Combine the three panels (single shared legend added below)
-# combined_panels_losers_multiple_production_targets <- plot_grid(
-#   plotalldata_loser + labs(title = "All Scenarios"),  # Add a title to each plot
-#   plot05_loser + labs(title = "   Production > 0.5"),
-#   plot75_loser + labs(title = "   Production > 0.75"),
-#   ncol = 3,
-#   labels = c("A", "B", "C"),  # Add labels (optional)
-#   label_size = 14,  # Size of the labels
-#   rel_widths = c(2.6, 1.2, 1.2)
-# )
-# 
-# combined_plot_losers_multiple_production_targets <- plot_grid(
-#   shared_legend,
-#   combined_panels_losers_multiple_production_targets,
-#   ncol = 1,
-#   rel_heights = c(0.12, 1)
-# )
-# 
-# # Export threshold-comparison figures
-# ggsave(file.path(nr2_paths$figures_dir, "loser_uncertainty_multiple_production_targets.pdf"),
-#        combined_plot_losers_multiple_production_targets,
-#        width = 20, height = 10, units = "in",
-#        bg = "white")
-# 
-# ggsave(file.path(nr2_paths$figures_dir, "loser_uncertainty_multiple_production_targets.png"),
-#        combined_plot_losers_multiple_production_targets,
-#        width = 20, height = 10, units = "in",
-#        bg = "white")
+
+
+#For  loser species, plot uncertainty for multiple production targets
+process_data <- function(df, production_threshold, sppCategories ) {
+  df_filtered <- df %>% filter(production_target > production_threshold)
+
+  if (nrow(df_filtered) == 0) {
+    return(list(df_sum = tibble(), loser_spp = character(0)))
+  }
+
+  unique_combinations <- df_filtered %>%
+    group_by(species) %>%
+    count() %>%
+    ungroup() %>%
+    select(n) %>%
+    unique() %>%
+    pull()
+
+  if (length(unique_combinations) == 0) {
+    return(list(df_sum = tibble(), loser_spp = character(0)))
+  }
+
+  # Use a single denominator even if counts vary across species.
+  combo_denom <- max(unique_combinations, na.rm = TRUE)
+
+  df_sum <- df_filtered %>%
+    unique() %>%
+    group_by(species, treatment_strategy) %>%
+    count() %>%
+    mutate(percentage = n / combo_denom) %>%
+    left_join(sppCategories, by = "species") %>%
+    left_join(iucn_classification, by = "species") %>%
+    mutate(species = str_remove(species, "^Un_matched\\s*_")) %>%
+    mutate(species = str_remove(species, "^Un[-_]*\\s*matched\\s*-*\\s*")) %>%
+    mutate(species = str_replace_all(species, " ", ""))
+
+  loser_spp <- df_sum %>%
+    ungroup() %>%
+    filter(spp_category == "loser") %>%
+    select(species) %>%
+    unique() %>%
+    pull()
+
+  list(df_sum = df_sum, loser_spp = loser_spp)
+}
+
+
+generate_plot <- function(df_sum, species_filter, show_species_labels = FALSE, show_legend = FALSE) {
+  if (nrow(df_sum) == 0 || length(species_filter) == 0) {
+    return(
+      ggplot() +
+        theme_void() +
+        labs(title = "No species available for this threshold")
+    )
+  }
+
+  df_plot <- df_sum %>%
+    filter(species %in% species_filter) %>%
+    group_by(species) %>%
+    mutate(max_plantation = max(percentage[treatment_strategy == "plantation"])) %>%
+    ungroup() %>%
+    arrange(max_plantation) %>%
+    mutate(species = factor(species, levels = unique(species))) %>%
+    mutate(treatment_strategy = factor(treatment_strategy, levels = c("logging", "plantation")))
+
+  suffix_by_species <- df_plot %>%
+    distinct(species, redlistCategory) %>%
+    mutate(suffix = redlist_category_suffix(redlistCategory)) %>%
+    dplyr::pull(suffix, name = species)
+
+  p <- ggplot(df_plot, aes(x = species, y = percentage, fill = treatment_strategy)) +
+    geom_bar(stat = "identity", width = 0.7, color = "black", size = 0.3) +
+    geom_hline(yintercept = c(0.25, 0.5, 0.75), linetype = "dashed", color = "black", size = 0.7) +
+    coord_flip() +
+    scale_fill_manual(
+      values = c("logging" = "#E69F00", "plantation" = "#56B4E9"),
+      labels = c("Selective-logging Best", "Plantations Best")  # Legend labels
+    ) +
+    labs(
+      x = NULL,
+      y = "Proportion",
+      fill = element_blank()
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_line(color = "gray80", size = 0.5),
+      axis.title.x = element_text(size = 14),
+      legend.position = if (show_legend) "top" else "none",
+      legend.title = element_text(size = 12),
+      legend.text = element_text(size = 12)
+    )
+
+  if (show_species_labels) {
+    p <- p +
+      scale_x_discrete(labels = function(x) format_species_axis_labels(x, suffix_by_species)) +
+      labs(caption = iucn_redlist_suffix_caption) +
+      theme(
+        axis.text.y = element_text(size = 9),
+        plot.caption = element_text(size = 8, hjust = 0)
+      )
+  } else {
+    p <- p + theme(axis.text.y = element_blank())
+  }
+
+  p
+}
+
+
+# Process data for 0.25, 0.5, and 0.75 thresholds
+resultalldata <- process_data(df, 0, sppCategories)
+result025 <- process_data(df, 0.25, sppCategories)
+result05 <- process_data(df, 0.5, sppCategories)
+result075 <- process_data(df, 0.75, sppCategories)
+
+# Generate plots for loser species #####
+plotalldata_loser <- generate_plot(resultalldata$df_sum, resultalldata$loser_spp, show_species_labels = TRUE, show_legend = FALSE)
+plot025_loser <- generate_plot(result025$df_sum, result025$loser_spp, show_species_labels = FALSE, show_legend = FALSE)
+plot05_loser <- generate_plot(result05$df_sum, result05$loser_spp, show_species_labels = FALSE, show_legend = FALSE)
+plot75_loser <- generate_plot(result075$df_sum, result075$loser_spp, show_species_labels = FALSE, show_legend = FALSE)
+
+# Build one shared legend
+legend_plot <- generate_plot(resultalldata$df_sum, resultalldata$loser_spp, show_species_labels = FALSE, show_legend = TRUE)
+shared_legend <- cowplot::get_legend(legend_plot)
+
+
+
+#combined figure losers ####
+
+#combined figure losers ####
+# Combine the three panels (single shared legend added below)
+combined_panels_losers_multiple_production_targets <- plot_grid(
+  plotalldata_loser + labs(title = "All Scenarios"),  # Add a title to each plot
+  plot05_loser + labs(title = "   Production > 0.5"),
+  plot75_loser + labs(title = "   Production > 0.75"),
+  ncol = 3,
+  labels = c("A", "B", "C"),  # Add labels (optional)
+  label_size = 14,  # Size of the labels
+  rel_widths = c(2.6, 1.2, 1.2)
+)
+
+combined_plot_losers_multiple_production_targets <- plot_grid(
+  shared_legend,
+  combined_panels_losers_multiple_production_targets,
+  ncol = 1,
+  rel_heights = c(0.12, 1)
+)
+
+# Export threshold-comparison figures
+ggsave(file.path(nr2_paths$figures_dir, "loser_uncertainty_multiple_production_targets.pdf"),
+       combined_plot_losers_multiple_production_targets,
+       width = 20, height = 10, units = "in",
+       bg = "white")
+
+ggsave(file.path(nr2_paths$figures_dir, "loser_uncertainty_multiple_production_targets.png"),
+       combined_plot_losers_multiple_production_targets,
+       width = 20, height = 10, units = "in",
+       bg = "white")
 # 
 # # Export individual threshold plots (both PDF and PNG)
 # ggsave(file.path(nr2_paths$figures_dir, "loser_uncertainty_all_scenarios.pdf"),
