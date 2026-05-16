@@ -11,7 +11,7 @@
 #   and all-species panels).
 # =============================================================================
 
-source("Scripts/Nature_Revision_2/00_config.R")
+source("Scripts/Nature_Revision2/00_config.R")
 nr2_paths <- nr2_init(".", verbose = FALSE)
 
 library(tidyverse)
@@ -32,6 +32,59 @@ if (!file.exists(spp_categories_file)) {
 }
 
 sppCategories <- readRDS(spp_categories_file)
+
+# Read IUCN Red List status so species axes can show category suffix symbols (Nature-style).
+iucn_traits_file <- dplyr::case_when(
+  file.exists("Inputs/AllBorneoSpeciesTraits.csv") ~ "Inputs/AllBorneoSpeciesTraits.csv",
+  file.exists("Scripts/Nature_Revision2/IUCN_hunting/inputs/AllBorneoSpeciesTraits.csv") ~
+    "Scripts/Nature_Revision2/IUCN_hunting/inputs/AllBorneoSpeciesTraits.csv",
+  file.exists("Scripts/IUCN_hunting/inputs/AllBorneoSpeciesTraits.csv") ~
+    "Scripts/IUCN_hunting/inputs/AllBorneoSpeciesTraits.csv",
+  TRUE ~ NA_character_
+)
+if (is.na(iucn_traits_file)) {
+  stop("Missing IUCN traits file needed for Red List category suffix labels on species axes.")
+}
+
+iucn_classification <- read.csv(iucn_traits_file) %>%
+  select(spp, redlistCategory) %>%
+  unique() %>%
+  mutate(redlistCategory = case_when(
+    spp == "Ferruginous Babbler" ~ "Least Concern",
+    spp == "White-chested Babbler" ~ "Near Threatened",
+    spp == "Rufous-tailed Shama" ~ "Near Threatened",
+    spp == "Chestnut-necklaced Partridge" ~ "Vulnerable",
+    spp == "Short-tailed Babbler" ~ "Near Threatened",
+    spp == "White-rumped Shama" ~ "Least Concern",
+    spp == "Olive-backed Woodpecker" ~ "Near Threatened",
+    spp == "Blue-banded Pitta" ~ "Least Concern",
+    spp == "Banded Kingfisher" ~ "Least Concern",
+    spp == "Banded Woodpecker" ~ "Least Concern",
+    TRUE ~ redlistCategory
+  )) %>%
+  mutate(
+    threatened = case_when(
+      !is.na(redlistCategory) & redlistCategory != "Least Concern" & redlistCategory != "" ~ "Y",
+      TRUE ~ "N"
+    )
+  ) %>%
+  rename(species = spp)
+
+# Caption for figures: Least Concern is not listed (no suffix on plot).
+iucn_redlist_suffix_caption <- paste0(
+  "IUCN Red List category suffixes: ",
+  "\u2020 Near Threatened; \u2021 Vulnerable; \u00A7 Endangered; \u00B6 Critically Endangered."
+)
+
+redlist_category_suffix <- function(category) {
+  dplyr::case_when(
+    category == "Near Threatened" ~ "\u2020",
+    category == "Vulnerable" ~ "\u2021",
+    category == "Endangered" ~ "\u00A7",
+    category == "Critically Endangered" ~ "\u00B6",
+    TRUE ~ ""
+  )
+}
 
 #select which starting landscape and scenario ruls you want
 rds_files
@@ -54,7 +107,9 @@ df_sum <- df %>%  unique() %>%
 
 
 #add in species threat and specialsm info 
-df_sum <- df_sum %>% left_join(sppCategories) %>%
+df_sum <- df_sum %>%
+  left_join(sppCategories) %>%
+  left_join(iucn_classification, by = "species") %>%
   mutate(species = str_remove(species, "^Un_matched\\s*_")) %>% 
   mutate(species = str_remove(species, "^Un[-_]*\\s*matched\\s*-*\\s*")) %>%  
   mutate(species = str_replace_all(species, " ", ""))
@@ -83,6 +138,20 @@ sp_prefer_plantation_dominated_production <- df_sum %>% filter(treatment_strateg
 
 #plot function ####
 
+format_species_axis_labels <- function(labels, suffix_by_species) {
+  label_expressions <- vapply(labels, function(label) {
+    label_escaped <- gsub("'", "\\\\'", label)
+    suf <- unname(suffix_by_species[label])
+    if (length(suf) != 1L || is.na(suf) || !nzchar(suf)) {
+      paste0("italic('", label_escaped, "')")
+    } else {
+      suf_escaped <- gsub("'", "\\\\'", suf)
+      paste0("italic('", label_escaped, "') ~ '", suf_escaped, "'")
+    }
+  }, character(1))
+  parse(text = label_expressions)
+}
+
 generate_uncertainty_plot <- function(df_sum, species_group, treatment_order = c("logging", "plantation")) {
   
   df_filtered <- df_sum %>%
@@ -99,7 +168,12 @@ generate_uncertainty_plot <- function(df_sum, species_group, treatment_order = c
     
     # Ensure treatment_strategy is a factor (ordering)
     mutate(treatment_strategy = factor(treatment_strategy, levels = treatment_order)) 
-  
+
+  suffix_by_species <- df_filtered %>%
+    distinct(species, redlistCategory) %>%
+    mutate(suffix = redlist_category_suffix(redlistCategory)) %>%
+    dplyr::pull(suffix, name = species)
+
   # Plot
   ggplot(df_filtered, aes(x = species, y = percentage, fill = treatment_strategy)) +
     geom_bar(stat = "identity", width = 0.7, color = "black", size = 0.3) +  # Stacked bar
@@ -111,18 +185,21 @@ generate_uncertainty_plot <- function(df_sum, species_group, treatment_order = c
                  "plantation" = "#56B4E9"),  # Blue for plantation
       labels = c("Selective-logging Best", "Plantations Best")  # Legend labels
     ) +
+    scale_x_discrete(labels = function(x) format_species_axis_labels(x, suffix_by_species)) +
     labs(
       x = NULL,  # Remove x-axis label
       y = "Proportion",
-      fill = element_blank()
+      fill = element_blank(),
+      caption = iucn_redlist_suffix_caption
     ) +
     theme_minimal(base_size = 14) +  # Clean theme for publication
     theme(
       panel.grid.major.y = element_blank(),  # Remove horizontal grid lines
       panel.grid.minor = element_blank(),
       panel.grid.major.x = element_line(color = "gray80", size = 0.5),
-      axis.text.y = element_text(face = "italic", size = 12),  # Italic species names
+      axis.text.y = element_text(size = 12),  # Plotmath: italic name + Red List suffix
       axis.title.x = element_text(size = 14),
+      plot.caption = element_text(size = 9, hjust = 0),
       legend.position = "top",  # Move legend to the top
       legend.title = element_text(size = 12),
       legend.text = element_text(size = 12)
@@ -134,7 +211,7 @@ loser_bird_uncertainty_plot <- generate_uncertainty_plot(df_sum, loser_spp)
 int1_bird_uncertainty_plot <- generate_uncertainty_plot(df_sum, int1L_spp)
 all_sp_uncertainty_plot <-  generate_uncertainty_plot(df_sum, all_spp)
 # Define the number of chunks you want to split all spp into (e.g., 3)
-num_chunks <- 2
+num_chunks <- 3
 
 # Split the all_spp vector into multiple chunks
 chunked_spp <- split(all_spp, ceiling(seq_along(all_spp) / (length(all_spp) / num_chunks)))
@@ -146,6 +223,7 @@ plot_list <- lapply(chunked_spp, function(spp_chunk) {
 
 all_sp_split1 <- plot_list[[1]]
 all_sp_split2 <- plot_list[[2]]
+all_sp_split3 <- plot_list[[3]]
 
 
 #EXPORT FIGURES ####
@@ -178,6 +256,11 @@ ggsave(file.path(nr2_paths$figures_dir, "all_sp_chunk2.pdf"),
        all_sp_split2,
        width = 12, height = 12, units = "in", 
        bg = "white")
+ggsave(file.path(nr2_paths$figures_dir, "all_sp_chunk3.pdf"),
+       all_sp_split3,
+       width = 12, height = 12, units = "in", 
+       bg = "white")
+
 
 #PNG ####
 # Save the loser species combined plots as A4-sized output
@@ -204,6 +287,10 @@ ggsave(file.path(nr2_paths$figures_dir, "all_sp_chunk1.png"),
 
 ggsave(file.path(nr2_paths$figures_dir, "all_sp_chunk2.png"),
        all_sp_split2,
+       width = 12, height = 12, units = "in", 
+       bg = "white")
+ggsave(file.path(nr2_paths$figures_dir, "all_sp_chunk3.png"),
+       all_sp_split3,
        width = 12, height = 12, units = "in", 
        bg = "white")
 

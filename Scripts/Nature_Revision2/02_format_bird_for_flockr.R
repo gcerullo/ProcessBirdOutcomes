@@ -12,7 +12,7 @@
 
 # Clean and format data for passing to flocker
 rm(list = ls())
-source("Scripts/Nature_Revision_2/00_config.R")
+source("Scripts/Nature_Revision2/00_config.R")
 nr2_paths <- nr2_init(".", verbose = FALSE)
 
 # housekeeping ----
